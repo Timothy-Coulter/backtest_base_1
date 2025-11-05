@@ -2,18 +2,18 @@
 
 from .backtest_engine import BacktestEngine
 from .config import (
-    BacktesterConfig,
-    DataConfig,
-    StrategyConfig,
-    PortfolioConfig,
-    ExecutionConfig,
-    RiskConfig,
-    PerformanceConfig,
     BacktestConfig,
+    BacktesterConfig,
     ConfigValidator,
+    DataConfig,
+    ExecutionConfig,
+    PerformanceConfig,
+    PortfolioConfig,
+    RiskConfig,
+    StrategyConfig,
     get_config,
+    reset_config,
     set_config,
-    reset_config
 )
 from .logger import get_backtester_logger
 from .performance import PerformanceAnalyzer
@@ -33,5 +33,5 @@ __all__ = [
     'set_config',
     'reset_config',
     'get_backtester_logger',
-    'PerformanceAnalyzer'
+    'PerformanceAnalyzer',
 ]

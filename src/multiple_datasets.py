@@ -1,14 +1,25 @@
+"""Multiple datasets analysis script.
+
+This script provides functionality for analyzing multiple datasets
+in parallel using Optuna optimization.
+"""
+
 import optuna
+
 from run_sim import get_data, run_portfolio_simulation  # type: ignore[import-not-found]
 
 # List of datasets (tickers)
 datasets = ["SPY", "QQQ", "VTI"]
 
 # Pre-load all data to avoid repeated downloads
-all_data = {ticker: get_data(ticker=ticker, start_date="1990-01-01", end_date="2025-11-01", interval="1mo")
-            for ticker in datasets}
+all_data = {
+    ticker: get_data(ticker=ticker, start_date="1990-01-01", end_date="2025-11-01", interval="1mo")
+    for ticker in datasets
+}
+
 
 def objective(trial):
+    """Objective function for Optuna optimization across multiple datasets."""
     total_score = 0.0
 
     # Suggest parameters once — same for all datasets
@@ -22,7 +33,7 @@ def objective(trial):
 
     penalty = 50
 
-    for ticker, data in all_data.items():
+    for _ticker, data in all_data.items():
         result = run_portfolio_simulation(
             data=data,
             leverage_base=leverage_base,
@@ -31,14 +42,15 @@ def objective(trial):
             alpha_to_base_split=alpha_to_base_split,
             stop_loss_base=stop_loss_base,
             stop_loss_alpha=stop_loss_alpha,
-            take_profit_target=take_profit_target
+            take_profit_target=take_profit_target,
         )
         # Combine scores (e.g., sum of return - penalty * drawdown)
-        score = result["total_return"] - penalty * abs(result["max_drawdown"]*100)
-        total_score += score
+        total_score += result.get("total_return", 0.0) - penalty * abs(
+            result.get("max_drawdown", 0.0)
+        )
 
-    # Optionally, take average instead of sum
-    return total_score / len(all_data)
+    return total_score
+
 
 # Create and run study
 study = optuna.create_study(direction="maximize")

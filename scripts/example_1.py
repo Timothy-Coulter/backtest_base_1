@@ -1,7 +1,12 @@
-# Quick test of the modular backtester
+"""Quick test of the modular backtester.
+
+This script provides a simple test of the modular backtester functionality.
+"""
+
 import sys
+
 sys.path.append('..')
-from backtester.main import run_modular_backtest, get_data
+from backtester.main import get_data, run_modular_backtest
 
 # Load test data
 print('Loading test data...')
@@ -19,11 +24,10 @@ result = run_modular_backtest(
     stop_loss_base=0.025,
     stop_loss_alpha=0.025,
     take_profit_target=0.10,
-    initial_capital=100.0
+    initial_capital=100.0,
 )
 
 print('✅ Modular backtester test completed successfully!')
 print(f'Total Return: {result["performance"]["total_return"]:.2%}')
 print(f'Sharpe Ratio: {result["performance"]["sharpe_ratio"]:.3f}')
 print(f'Max Drawdown: {result["performance"]["max_drawdown"]:.2%}')
-

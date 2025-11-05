@@ -1,9 +1,9 @@
-"""
-Tests for FormatUtils class.
-"""
+"""Tests for FormatUtils class."""
+
+from datetime import datetime
 
 import pytest
-from datetime import datetime
+
 from backtester.utils.format_utils import FormatUtils
 
 
@@ -13,173 +13,173 @@ class TestFormatUtils:
     def test_currency_formatting(self):
         """Test currency formatting."""
         formatter = FormatUtils()
-        
+
         # Test basic currency formatting
-        assert "$1,234.56" == formatter.currency(1234.56)
-        assert "€1,234.56" == formatter.currency(1234.56, symbol="€", decimal=".", thousands=",")
-        
+        assert formatter.currency(1234.56) == "$1,234.56"
+        assert formatter.currency(1234.56, symbol="€", decimal=".", thousands=",") == "€1,234.56"
+
         # Test custom decimal places
-        assert "$1,234.56" == formatter.currency(1234.56, decimals=2)
-        assert "$1,234.56000" == formatter.currency(1234.56, decimals=5)
-        
+        assert formatter.currency(1234.56, decimals=2) == "$1,234.56"
+        assert formatter.currency(1234.56, decimals=5) == "$1,234.56000"
+
         # Test zero value
-        assert "$0.00" == formatter.currency(0)
-        
+        assert formatter.currency(0) == "$0.00"
+
         # Test negative value
-        assert "$-1,234.56" == formatter.currency(-1234.56)
+        assert formatter.currency(-1234.56) == "$-1,234.56"
 
     def test_percentage_formatting(self):
         """Test percentage formatting."""
         formatter = FormatUtils()
-        
+
         # Test basic percentage
-        assert "12.34%" == formatter.percentage(0.1234)
-        assert "5.00%" == formatter.percentage(0.05)
-        
+        assert formatter.percentage(0.1234) == "12.34%"
+        assert formatter.percentage(0.05) == "5.00%"
+
         # Test different decimal places
-        assert "5.0%" == formatter.percentage(0.05, decimals=1)
-        assert "5.0000%" == formatter.percentage(0.05, decimals=4)
-        
+        assert formatter.percentage(0.05, decimals=1) == "5.0%"
+        assert formatter.percentage(0.05, decimals=4) == "5.0000%"
+
         # Test zero
-        assert "0.00%" == formatter.percentage(0)
-        
+        assert formatter.percentage(0) == "0.00%"
+
         # Test negative percentage
-        assert "-12.34%" == formatter.percentage(-0.1234)
+        assert formatter.percentage(-0.1234) == "-12.34%"
 
     def test_number_formatting(self):
         """Test number formatting."""
         formatter = FormatUtils()
-        
+
         # Test basic number formatting
-        assert "1,234,567" == formatter.number(1234567)
-        assert "1,234.57" == formatter.number(1234.567, decimals=2)
-        
+        assert formatter.number(1234567) == "1,234,567"
+        assert formatter.number(1234.567, decimals=2) == "1,234.57"
+
         # Test zero decimals
-        assert "1,235" == formatter.number(1234.567, decimals=0)
-        
+        assert formatter.number(1234.567, decimals=0) == "1,235"
+
         # Test negative numbers
-        assert "-1,234,567" == formatter.number(-1234567)
+        assert formatter.number(-1234567) == "-1,234,567"
 
     def test_compact_number_formatting(self):
         """Test compact number formatting."""
         formatter = FormatUtils()
-        
+
         # Test millions
-        assert "1.23M" == formatter.compact_number(1234567)
-        assert "-1.23M" == formatter.compact_number(-1234567)
-        
+        assert formatter.compact_number(1234567) == "1.23M"
+        assert formatter.compact_number(-1234567) == "-1.23M"
+
         # Test thousands
-        assert "1.23K" == formatter.compact_number(1234)
-        assert "-1.23K" == formatter.compact_number(-1234)
-        
+        assert formatter.compact_number(1234) == "1.23K"
+        assert formatter.compact_number(-1234) == "-1.23K"
+
         # Test billions
-        assert "1.23B" == formatter.compact_number(1234567890)
-        
+        assert formatter.compact_number(1234567890) == "1.23B"
+
         # Test small numbers
-        assert "1.23" == formatter.compact_number(1.23)
-        assert "0.00" == formatter.compact_number(0)
+        assert formatter.compact_number(1.23) == "1.23"
+        assert formatter.compact_number(0) == "0.00"
 
     def test_date_formatting(self):
         """Test date formatting."""
         formatter = FormatUtils()
-        
+
         test_date = datetime(2023, 1, 15, 14, 30)
-        
+
         # Test different date formats
-        assert "2023-01-15" == formatter.date(test_date, format="yyyy-MM-dd")
-        assert "01/15/2023" == formatter.date(test_date, format="MM/dd/yyyy")
-        assert "15/01/2023" == formatter.date(test_date, format="dd/MM/yyyy")
-        assert "2023-01-15 14:30:00" == formatter.date(test_date, format="yyyy-MM-dd HH:mm:ss")
-        
+        assert formatter.date(test_date, format="yyyy-MM-dd") == "2023-01-15"
+        assert formatter.date(test_date, format="MM/dd/yyyy") == "01/15/2023"
+        assert formatter.date(test_date, format="dd/MM/yyyy") == "15/01/2023"
+        assert formatter.date(test_date, format="yyyy-MM-dd HH:mm:ss") == "2023-01-15 14:30:00"
+
         # Test custom format
-        assert "Jan 15, 2023" == formatter.date(test_date, format="%b %d, %Y")
+        assert formatter.date(test_date, format="%b %d, %Y") == "Jan 15, 2023"
 
     def test_datetime_formatting(self):
         """Test datetime formatting."""
         formatter = FormatUtils()
-        
+
         test_datetime = datetime(2023, 1, 15, 14, 30, 45)
-        
+
         # Test datetime formatting
-        assert "2023-01-15 14:30:45" == formatter.format_datetime(test_datetime)
-        
+        assert formatter.format_datetime(test_datetime) == "2023-01-15 14:30:45"
+
         # Test with None
-        assert "" == formatter.format_datetime(None)
+        assert formatter.format_datetime(None) == ""
 
     def test_time_formatting(self):
         """Test time formatting."""
         formatter = FormatUtils()
-        
+
         test_datetime = datetime(2023, 1, 15, 14, 30, 45)
-        
+
         # Test time formatting
-        assert "14:30:45" == formatter.time_format(test_datetime)
-        
+        assert formatter.time_format(test_datetime) == "14:30:45"
+
         # Test with None
-        assert "" == formatter.time_format(None)
+        assert formatter.time_format(None) == ""
 
     def test_return_percentage_formatting(self):
         """Test return percentage formatting with sign."""
         formatter = FormatUtils()
-        
+
         # Test positive returns
-        assert "+12.34%" == formatter.return_pct(0.1234)
-        assert "+5.00%" == formatter.return_pct(0.05)
-        
+        assert formatter.return_pct(0.1234) == "+12.34%"
+        assert formatter.return_pct(0.05) == "+5.00%"
+
         # Test negative returns
-        assert "-5.67%" == formatter.return_pct(-0.0567)
-        
+        assert formatter.return_pct(-0.0567) == "-5.67%"
+
         # Test zero
-        assert "+0.00%" == formatter.return_pct(0)
+        assert formatter.return_pct(0) == "+0.00%"
 
     def test_ratio_formatting(self):
         """Test ratio formatting."""
         formatter = FormatUtils()
-        
+
         # Test basic ratio (default is 3 decimals)
-        assert "1.234" == formatter.ratio(1.234)
-        assert "2.000" == formatter.ratio(2.0)
-        
+        assert formatter.ratio(1.234) == "1.234"
+        assert formatter.ratio(2.0) == "2.000"
+
         # Test custom decimals
-        assert "1.2340" == formatter.ratio(1.234, decimals=4)
+        assert formatter.ratio(1.234, decimals=4) == "1.2340"
 
     def test_leverage_ratio_formatting(self):
         """Test leverage ratio formatting."""
         formatter = FormatUtils()
-        
+
         # Test leverage ratio formatting
-        assert "2.00x" == formatter.leverage_ratio(2.0)
-        assert "1.50x" == formatter.leverage_ratio(1.5)
-        
+        assert formatter.leverage_ratio(2.0) == "2.00x"
+        assert formatter.leverage_ratio(1.5) == "1.50x"
+
         # Test custom decimals
-        assert "2.000x" == formatter.leverage_ratio(2.0, decimals=3)
+        assert formatter.leverage_ratio(2.0, decimals=3) == "2.000x"
 
     def test_drawdown_formatting(self):
         """Test drawdown formatting (always negative)."""
         formatter = FormatUtils()
-        
+
         # Test drawdown formatting
-        assert "-15.67%" == formatter.drawdown(-0.1567)
-        assert "-5.00%" == formatter.drawdown(-0.05)
-        
+        assert formatter.drawdown(-0.1567) == "-15.67%"
+        assert formatter.drawdown(-0.05) == "-5.00%"
+
         # Test with positive input (should format as is)
-        assert "15.67%" == formatter.drawdown(0.1567)
+        assert formatter.drawdown(0.1567) == "15.67%"
 
     def test_none_values(self):
         """Test handling of None values."""
         formatter = FormatUtils()
-        
+
         # Test None in currency (should handle gracefully)
-        assert "$0.00" == formatter.currency(None)
-        
+        assert formatter.currency(None) == "$0.00"
+
         # Test None in percentage (skip this test as it requires changes to the utility)
         # assert "0.00%" == formatter.percentage(None)
-        
+
         # Test None in number
-        assert "0" == formatter.number(None)
-        
+        assert formatter.number(None) == "0"
+
         # Test None in compact number
-        assert "0.00" == formatter.compact_number(None)
+        assert formatter.compact_number(None) == "0.00"
 
 
 if __name__ == "__main__":

@@ -1,5 +1,10 @@
-import numpy as np
+"""Portfolio simulation module.
 
+This module provides functionality for running portfolio simulations
+with various parameters and configurations.
+"""
+
+import numpy as np
 
 
 def run_portfolio_simulation(
@@ -21,11 +26,9 @@ def run_portfolio_simulation(
     min_trade_size=0.0,
     funding_enabled=True,
     tax_rate=0.45,
-    seed=42
+    seed=42,
 ):
-    """
-    Run a portfolio simulation with two pools: base and alpha with different leverage.
-    """
+    """Run a portfolio simulation with two pools: base and alpha with different leverage."""
     np.random.seed(seed)
 
     # Validate data
@@ -46,7 +49,7 @@ def run_portfolio_simulation(
         "alpha_entry_price": data["Close"].iloc[0],
         "cumulative_tax": 0.0,
         "portfolio_values": [initial_capital],
-        "tax_loss_carryforward": 0.0
+        "tax_loss_carryforward": 0.0,
     }
     trade_log = []
 
@@ -96,7 +99,9 @@ def run_portfolio_simulation(
             stop_price_base = portfolio["base_entry_price"] * (1 - stop_loss_base)
             if day_low <= stop_price_base:
                 # Exit at stop price
-                actual_return = (stop_price_base - portfolio["base_entry_price"]) / portfolio["base_entry_price"]
+                actual_return = (stop_price_base - portfolio["base_entry_price"]) / portfolio[
+                    "base_entry_price"
+                ]
                 base_gain = actual_return * base_position_value - spread_cost * base_position_value
                 portfolio["base_active"] = False
                 base_exit_reason = "STOP_LOSS"
@@ -106,8 +111,12 @@ def run_portfolio_simulation(
                 tp_price_base = portfolio["base_entry_price"] * (1 + take_profit_target)
                 if day_high >= tp_price_base:
                     # Exit at take-profit price
-                    actual_return = (tp_price_base - portfolio["base_entry_price"]) / portfolio["base_entry_price"]
-                    base_gain = actual_return * base_position_value - spread_cost * base_position_value
+                    actual_return = (tp_price_base - portfolio["base_entry_price"]) / portfolio[
+                        "base_entry_price"
+                    ]
+                    base_gain = (
+                        actual_return * base_position_value - spread_cost * base_position_value
+                    )
                     portfolio["base_active"] = False
                     base_exit_reason = "TAKE_PROFIT"
                     base_exit_price = tp_price_base
@@ -135,8 +144,12 @@ def run_portfolio_simulation(
             stop_price_alpha = portfolio["alpha_entry_price"] * (1 - stop_loss_alpha)
             if day_low <= stop_price_alpha:
                 # Exit at stop price
-                actual_return = (stop_price_alpha - portfolio["alpha_entry_price"]) / portfolio["alpha_entry_price"]
-                alpha_gain = actual_return * alpha_position_value - spread_cost * alpha_position_value
+                actual_return = (stop_price_alpha - portfolio["alpha_entry_price"]) / portfolio[
+                    "alpha_entry_price"
+                ]
+                alpha_gain = (
+                    actual_return * alpha_position_value - spread_cost * alpha_position_value
+                )
                 portfolio["alpha_active"] = False
                 alpha_exit_reason = "STOP_LOSS"
                 alpha_exit_price = stop_price_alpha
@@ -145,8 +158,12 @@ def run_portfolio_simulation(
                 tp_price_alpha = portfolio["alpha_entry_price"] * (1 + take_profit_target)
                 if day_high >= tp_price_alpha:
                     # Exit at take-profit price
-                    actual_return = (tp_price_alpha - portfolio["alpha_entry_price"]) / portfolio["alpha_entry_price"]
-                    alpha_gain = actual_return * alpha_position_value - spread_cost * alpha_position_value
+                    actual_return = (tp_price_alpha - portfolio["alpha_entry_price"]) / portfolio[
+                        "alpha_entry_price"
+                    ]
+                    alpha_gain = (
+                        actual_return * alpha_position_value - spread_cost * alpha_position_value
+                    )
                     portfolio["alpha_active"] = False
                     alpha_exit_reason = "TAKE_PROFIT"
                     alpha_exit_price = tp_price_alpha
@@ -171,7 +188,11 @@ def run_portfolio_simulation(
 
         if portfolio["base_active"] and portfolio["base_pool"][-1] > 0:
             # Commission on position value
-            base_commission = commission_rate * portfolio["base_pool"][-1] * leverage_base if trade_significant else 0
+            base_commission = (
+                commission_rate * portfolio["base_pool"][-1] * leverage_base
+                if trade_significant
+                else 0
+            )
             # Interest on borrowed amount
             base_interest = 0
             if funding_enabled and leverage_base > 1:
@@ -181,7 +202,11 @@ def run_portfolio_simulation(
 
         if portfolio["alpha_active"] and portfolio["alpha_pool"][-1] > 0:
             # Commission on position value
-            alpha_commission = commission_rate * portfolio["alpha_pool"][-1] * leverage_alpha if trade_significant else 0
+            alpha_commission = (
+                commission_rate * portfolio["alpha_pool"][-1] * leverage_alpha
+                if trade_significant
+                else 0
+            )
             # Interest on borrowed amount
             alpha_interest = 0
             if funding_enabled and leverage_alpha > 1:
@@ -200,7 +225,9 @@ def run_portfolio_simulation(
 
         # Update pools
         new_base = portfolio["base_pool"][-1] + base_gain + alpha_to_base - base_to_alpha - base_fee
-        new_alpha = portfolio["alpha_pool"][-1] + alpha_gain + base_to_alpha - alpha_to_base - alpha_fee
+        new_alpha = (
+            portfolio["alpha_pool"][-1] + alpha_gain + base_to_alpha - alpha_to_base - alpha_fee
+        )
 
         # Handle bankruptcy
         if new_base < 0:
@@ -266,7 +293,7 @@ def run_portfolio_simulation(
                 'base_exit': base_exit_reason,
                 'alpha_exit': alpha_exit_reason,
                 'base_exit_price': base_exit_price,
-                'alpha_exit_price': alpha_exit_price
+                'alpha_exit_price': alpha_exit_price,
             }
             trade_log.append(step_info)
 
@@ -301,7 +328,9 @@ def run_portfolio_simulation(
             alpha_tax_share = (alpha_positive / total_positive) * tax
             portfolio["base_pool"][-1] -= base_tax_share
             portfolio["alpha_pool"][-1] -= alpha_tax_share
-            portfolio["portfolio_values"][-1] = portfolio["base_pool"][-1] + portfolio["alpha_pool"][-1]
+            portfolio["portfolio_values"][-1] = (
+                portfolio["base_pool"][-1] + portfolio["alpha_pool"][-1]
+            )
 
     # Performance metrics
     portfolio_values = np.array(portfolio["portfolio_values"])
@@ -317,8 +346,8 @@ def run_portfolio_simulation(
     max_drawdown = np.min(drawdowns) if len(drawdowns) > 0 else 0
 
     total_return = ((portfolio_values[-1] / initial_capital) - 1) * 100
-    buy_and_hold_value = initial_capital * price[-1]/price[0]
-    buy_and_hold_return = (price[-1]/price[0]-1)*100
+    buy_and_hold_value = initial_capital * price[-1] / price[0]
+    buy_and_hold_return = (price[-1] / price[0] - 1) * 100
 
     return {
         "portfolio_values": portfolio_values,
@@ -332,5 +361,5 @@ def run_portfolio_simulation(
         "final_base": portfolio["base_pool"][-1],
         "final_alpha": portfolio["alpha_pool"][-1],
         "buy_and_hold_value": buy_and_hold_value,
-        "buy_and_hold_return": buy_and_hold_return
+        "buy_and_hold_return": buy_and_hold_return,
     }

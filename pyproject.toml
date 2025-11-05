@@ -5,7 +5,10 @@ description = "Quantitative Backtesting Framework"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "black>=25.9.0",
+    "isort>=7.0.0",
     "matplotlib>=3.10.7",
+    "mypy>=1.18.2",
     "numpy>=2.2.6",
     "optuna>=4.5.0",
     "pandas>=2.3.3",
@@ -14,6 +17,7 @@ dependencies = [
     "pydantic>=2.12.3",
     "pytest>=8.4.2",
     "python-dotenv>=1.0.0",
+    "ruff>=0.14.3",
     "scikit-learn>=1.7.2",
     "scipy>=1.15.3",
     "tqdm>=4.67.1",
@@ -65,27 +69,55 @@ all = [
     "hypothesis>=6.0.0",
 ]
 
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+skip-string-normalization = true
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+  "E",  # pycodestyle errors
+  "F",  # pyflakes
+  "I",  # isort
+  "N",  # pep8-naming
+  "UP", # pyupgrade
+  "B",  # flake8-bugbear
+  "SIM",# flake8-simplify
+  "C90",# mccabe complexity
+  "D",  # pydocstyle (docstrings)
+]
+ignore = [
+  "E501",  # handled by formatter
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+quote-style = "preserve"
+skip-magic-trailing-comma = false
+
 [tool.mypy]
-# Global configuration
 python_version = "3.10"
+namespace_packages = true
+explicit_package_bases = true
+mypy_path = "$MYPY_CONFIG_FILE_DIR"
 strict = true
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
-check_untyped_defs = true
-disallow_untyped_decorators = true
-no_implicit_optional = true
-warn_redundant_casts = true
 warn_unused_ignores = true
-warn_no_return = true
+warn_redundant_casts = true
+warn_return_any = true
 warn_unreachable = true
-strict_equality = true
-
-# Show error codes
-show_error_codes = true
-
-# Plugin configuration
+disallow_untyped_defs = true
+disallow_any_generics = true
+no_implicit_reexport = true
 plugins = ["pydantic.mypy"]
 
 # Ignore missing stubs for external libraries
@@ -95,92 +127,23 @@ module = [
     "matplotlib.*",
     "optuna.*",
     "numpy.*",
-    "pandas.*"
+    "pandas.*",
+    "psycopg2.*",
+    "pydantic.*",
+    "sklearn.*",
+    "scipy.*",
+    "tqdm.*",
 ]
 ignore_missing_imports = true
 
-# Per-module options
-[[tool.mypy.overrides]]
-module = [
-    "backtester.core.backtest_engine",
-    "backtester.portfolio.portfolio",
-    "backtester.execution.broker"
-]
-warn_return_any = false
-
-# =============================================================================
-# Test Configuration
-# =============================================================================
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
 
 [tool.pytest.ini_options]
-# Test discovery
+addopts = ["-n", "auto", "--reruns", "3"]
 testpaths = ["tests"]
-python_files = ["test_*.py", "*_test.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
-
-# Test options
-addopts = [
-    "--strict-markers",
-    "--strict-config",
-    "--verbose",
-    "--tb=short",
-    "-ra",
-]
-
-# Optional coverage options (only work if pytest-cov is installed)
-# Uncomment these lines if pytest-cov is installed:
-# addopts = [
-#     "--cov=backtester",
-#     "--cov-report=term-missing",
-#     "--cov-report=html:htmlcov",
-#     "--cov-report=xml:coverage.xml",
-#     "--cov-fail-under=80",
-# ]
-
-# Test markers
-markers = [
-    "unit: Unit tests",
-    "integration: Integration tests",
-    "slow: Slow tests that take more than 5 seconds",
-    "network: Tests that require network access",
-    "data: Tests that require data files",
-    "portfolio: Portfolio-related tests",
-    "strategy: Strategy-related tests",
-    "execution: Execution-related tests",
-    "core: Core backtesting engine tests",
-    "data_handler: Data handling tests",
-    "performance: Performance-related tests",
-    "app: Application-level tests",
-    "backtest: Backtest-related tests",
-    "optimization: Optimization tests",
-    "config: Configuration tests",
-    "factory: Factory tests",
-    "workflow: End-to-end workflow tests",
-    "api: API tests",
-    "cli: Command line interface tests",
-    "report: Report generation tests",
-    "export: Export functionality tests",
-]
-
-# Minimum version
-minversion = "7.0"
-
-# Logging for tests
-log_cli = true
-log_cli_level = "INFO"
-log_cli_format = "%(asctime)s [%(levelname)8s] %(name)s: %(message)s"
-log_cli_date_format = "%Y-%m-%d %H:%M:%S"
-
-# Filter warnings
-filterwarnings = [
-    "error",
-    "ignore::UserWarning",
-    "ignore::DeprecationWarning",
-    "ignore::PendingDeprecationWarning",
-    # Ignore missing imports for test modules
-    "ignore::ImportWarning:backtester.main",
-]
 
 # =============================================================================
 # Coverage Configuration

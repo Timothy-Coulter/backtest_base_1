@@ -1,14 +1,21 @@
-import numpy as np
-import optuna
-import matplotlib.pyplot as plt
+"""Portfolio trial and optimization module.
+
+This module provides functionality for running portfolio optimization
+trials using Optuna and other optimization techniques.
+"""
+
 import multiprocessing
 import os
-from functools import partial
-from dotenv import load_dotenv
 from datetime import datetime
+from functools import partial
 
-from utils import get_data  # type: ignore[import-not-found]
+import matplotlib.pyplot as plt
+import numpy as np
+import optuna
+from dotenv import load_dotenv
+
 from run_sim import run_portfolio_simulation  # type: ignore[import-not-found]
+from utils import get_data  # type: ignore[import-not-found]
 
 # Load environment variables from .env file
 load_dotenv()
@@ -18,6 +25,7 @@ load_dotenv()
 
 
 def objective(trial, data):
+    """Objective function for Optuna optimization."""
     result = run_portfolio_simulation(
         data=data,
         leverage_base=trial.suggest_float("leverage_base", 1.0, 10.0),
@@ -34,23 +42,24 @@ def objective(trial, data):
 
 
 def worker(study_name, storage_name, data):
-    """Single worker function for parallel Optuna grid search"""
+    """Single worker function for parallel Optuna grid search."""
     study = optuna.load_study(study_name=study_name, storage=storage_name)
     study.optimize(partial(objective, data=data))
 
 
 def run_parallel_grid_search(data):
-    N1 = 5
-    N2 = 2
+    """Run parallel grid search optimization."""
+    n1 = 5
+    n2 = 2
 
     search_space = {
-        "leverage_base": np.linspace(1.0, 10.0, N1).tolist(),
-        "leverage_alpha": np.linspace(1.0, 10.0, N1).tolist(),
-        "base_to_alpha_split": np.linspace(0.01, 0.99, N1).tolist(),
-        "alpha_to_base_split": np.linspace(0.01, 0.99, N1).tolist(),
-        "stop_loss_base": np.linspace(0.01, 0.05, N2).tolist(),
-        "stop_loss_alpha": np.linspace(0.01, 0.10, N2).tolist(),
-        "take_profit_target": np.linspace(0.05, 0.20, N2).tolist(),
+        "leverage_base": np.linspace(1.0, 10.0, n1).tolist(),
+        "leverage_alpha": np.linspace(1.0, 10.0, n1).tolist(),
+        "base_to_alpha_split": np.linspace(0.01, 0.99, n1).tolist(),
+        "alpha_to_base_split": np.linspace(0.01, 0.99, n1).tolist(),
+        "stop_loss_base": np.linspace(0.01, 0.05, n2).tolist(),
+        "stop_loss_alpha": np.linspace(0.01, 0.10, n2).tolist(),
+        "take_profit_target": np.linspace(0.05, 0.20, n2).tolist(),
     }
 
     # Get PostgreSQL credentials from environment variables
@@ -59,20 +68,20 @@ def run_parallel_grid_search(data):
     db_host = os.getenv("POSTGRES_HOST", "localhost")
     db_port = os.getenv("POSTGRES_PORT", "5432")
     db_name = os.getenv("POSTGRES_DB", "optuna_db")
-    
+
     if not db_password:
         raise ValueError(
             "POSTGRES_PASSWORD environment variable is not set. "
             "Please create a .env file with your PostgreSQL credentials."
         )
-    
+
     storage_name = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
     sampler = optuna.samplers.GridSampler(search_space)
-    
+
     # Create unique study name with timestamp (YYMMDD_HHMM)
     timestamp = datetime.now().strftime("%y%m%d_%H%M")
     study_name = f"portfolio_grid_search_{timestamp}"
-    
+
     print(f"Creating new study: {study_name}")
 
     # Create a new study (load_if_exists=False ensures fresh study each run)
@@ -107,6 +116,7 @@ if __name__ == "__main__":
 
     # Run random optimization first
     def wrapped_objective(trial):
+        """Wrapped objective function for optimization."""
         return objective(trial, data)
 
     study = optuna.create_study(direction="maximize")
@@ -123,7 +133,7 @@ if __name__ == "__main__":
     best_result = run_portfolio_simulation(data=data, **grid_study.best_params)
     print(f"\nFinal portfolio value: {best_result['portfolio_values'][-1]:.2f}")
     print(f"Total return: {best_result['total_return']:.2f}%")
-    print(f"Max drawdown: {best_result['max_drawdown']*100:.2f}%")
+    print(f"Max drawdown: {best_result['max_drawdown'] * 100:.2f}%")
     print(f"Sharpe ratio: {best_result['sharpe_ratio']:.2f}")
     print(f"Cumulative tax paid: {best_result['cumulative_tax']:.2f}")
     print(f"Buy and Hold Return: {best_result['buy_and_hold_return']:.2f}%")

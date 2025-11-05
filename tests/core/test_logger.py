@@ -1,17 +1,17 @@
-"""
-Comprehensive tests for the logging system.
+"""Comprehensive tests for the logging system.
 
 This module contains tests for the logger module that handles
 logging configuration, formatting, and output management for the backtester.
 """
 
-import pytest
 import logging
 from unittest.mock import Mock, patch
 
+import pytest
+
 # Import the modules being tested
 try:
-    from backtester.core.logger import BacktesterLogger, LogLevel, LogFormat
+    from backtester.core.logger import BacktesterLogger, LogFormat, LogLevel
 except ImportError as e:
     pytest.skip(f"Could not import backtester modules: {e}", allow_module_level=True)
 
@@ -22,7 +22,7 @@ class TestBacktesterLogger:
     def test_initialization_default(self):
         """Test logger initialization with default parameters."""
         logger = BacktesterLogger()
-        
+
         assert logger.name == "backtester"
         assert logger.level == LogLevel.INFO
         assert logger.format == LogFormat.STANDARD
@@ -34,9 +34,9 @@ class TestBacktesterLogger:
             name="custom_logger",
             level=LogLevel.DEBUG,
             format=LogFormat.DETAILED,
-            log_file="test.log"
+            log_file="test.log",
         )
-        
+
         assert logger.name == "custom_logger"
         assert logger.level == LogLevel.DEBUG
         assert logger.format == LogFormat.DETAILED
@@ -45,46 +45,46 @@ class TestBacktesterLogger:
     def test_set_level(self):
         """Test setting different log levels."""
         logger = BacktesterLogger()
-        
+
         # Test setting valid levels
         logger.set_level(LogLevel.WARNING)
         assert logger.level == LogLevel.WARNING
-        
+
         logger.set_level(LogLevel.ERROR)
         assert logger.level == LogLevel.ERROR
-        
+
         logger.set_level(LogLevel.DEBUG)
         assert logger.level == LogLevel.DEBUG
 
     def test_set_level_invalid(self):
         """Test that setting invalid log levels raises exception."""
         logger = BacktesterLogger()
-        
+
         with pytest.raises(ValueError, match="Invalid log level"):
             logger.set_level("INVALID_LEVEL")
 
     def test_set_format(self):
         """Test setting different log formats."""
         logger = BacktesterLogger()
-        
+
         # Test setting valid formats
         logger.set_format(LogFormat.SIMPLE)
         assert logger.format == LogFormat.SIMPLE
-        
+
         logger.set_format(LogFormat.JSON)
         assert logger.format == LogFormat.JSON
 
     def test_info_logging(self):
         """Test info level logging."""
         logger = BacktesterLogger()
-        
+
         # Mock the underlying logger
         with patch.object(logger, '_get_logger') as mock_get_logger:
             mock_logger_instance = Mock()
             mock_get_logger.return_value = mock_logger_instance
-            
+
             logger.info("Test info message", extra_data={"key": "value"})
-            
+
             mock_logger_instance.info.assert_called_once()
             call_args = mock_logger_instance.info.call_args
             assert "Test info message" in str(call_args[0][0])
@@ -92,13 +92,13 @@ class TestBacktesterLogger:
     def test_warning_logging(self):
         """Test warning level logging."""
         logger = BacktesterLogger()
-        
+
         with patch.object(logger, '_get_logger') as mock_get_logger:
             mock_logger_instance = Mock()
             mock_get_logger.return_value = mock_logger_instance
-            
+
             logger.warning("Test warning message")
-            
+
             mock_logger_instance.warning.assert_called_once()
             call_args = mock_logger_instance.warning.call_args
             assert "Test warning message" in str(call_args[0][0])
@@ -106,110 +106,102 @@ class TestBacktesterLogger:
     def test_error_logging(self):
         """Test error level logging."""
         logger = BacktesterLogger()
-        
+
         with patch.object(logger, '_get_logger') as mock_get_logger:
             mock_logger_instance = Mock()
             mock_get_logger.return_value = mock_logger_instance
-            
+
             logger.error("Test error message", exception=Exception("Test error"))
-            
+
             mock_logger_instance.error.assert_called_once()
 
     def test_debug_logging(self):
         """Test debug level logging."""
         logger = BacktesterLogger(level=LogLevel.DEBUG)
-        
+
         with patch.object(logger, '_get_logger') as mock_get_logger:
             mock_logger_instance = Mock()
             mock_get_logger.return_value = mock_logger_instance
-            
+
             logger.debug("Test debug message")
-            
+
             mock_logger_instance.debug.assert_called_once()
 
     def test_performance_logging(self):
         """Test performance metrics logging."""
         logger = BacktesterLogger()
-        
+
         with patch.object(logger, '_get_logger') as mock_get_logger:
             mock_logger_instance = Mock()
             mock_get_logger.return_value = mock_logger_instance
-            
-            performance_data = {
-                "total_return": 0.15,
-                "sharpe_ratio": 1.2,
-                "max_drawdown": -0.08
-            }
-            
+
+            performance_data = {"total_return": 0.15, "sharpe_ratio": 1.2, "max_drawdown": -0.08}
+
             logger.log_performance(performance_data)
-            
+
             # Verify that performance data was logged
             assert mock_logger_instance.info.call_count > 0
 
     def test_trade_logging(self):
         """Test trade execution logging."""
         logger = BacktesterLogger()
-        
+
         with patch.object(logger, '_get_logger') as mock_get_logger:
             mock_logger_instance = Mock()
             mock_get_logger.return_value = mock_logger_instance
-            
-            trade_data = {
-                "action": "buy",
-                "symbol": "SPY",
-                "quantity": 100,
-                "price": 400.0
-            }
-            
+
+            trade_data = {"action": "buy", "symbol": "SPY", "quantity": 100, "price": 400.0}
+
             logger.log_trade(trade_data)
-            
+
             # Verify that trade data was logged
             assert mock_logger_instance.info.call_count > 0
 
     def test_config_logging(self):
         """Test configuration logging."""
         logger = BacktesterLogger()
-        
+
         with patch.object(logger, '_get_logger') as mock_get_logger:
             mock_logger_instance = Mock()
             mock_get_logger.return_value = mock_logger_instance
-            
+
             config_data = {
                 "initial_capital": 10000.0,
                 "leverage_base": 2.0,
-                "stop_loss_base": 0.025
+                "stop_loss_base": 0.025,
             }
-            
+
             logger.log_config(config_data)
-            
+
             # Verify that config data was logged
             assert mock_logger_instance.info.call_count > 0
 
     def test_file_logging(self, tmp_path):
         """Test logging to file."""
         log_file = tmp_path / "test_backtester.log"
-        
+
         # Use the get_backtester_logger function which handles file logging
         logger = BacktesterLogger.get_logger(
             "test_logger",
             level="DEBUG",
             file_path=str(log_file),
-            console=False  # Disable console to avoid interference
+            console=False,  # Disable console to avoid interference
         )
         logger.setLevel(logging.DEBUG)
-        
+
         # Write some log messages
         logger.info("Test message to file")
         logger.debug("Debug message to file")
-        
+
         # Small delay to ensure file is written
         import time
+
         time.sleep(0.1)
-        
+
         # Verify that the log file was created and contains the messages
         assert log_file.exists()
-        
-        with open(log_file, 'r') as f:
+
+        with open(log_file) as f:
             content = f.read()
             assert "Test message to file" in content
             assert "Debug message to file" in content
@@ -220,14 +212,14 @@ class TestBacktesterLogger:
 
         with patch('sys.stdout'):
             logger.info("Console test message")
-            
+
             # The actual console logging behavior depends on implementation
             # This test verifies the method can be called without errors
 
     def test_log_format_standard(self):
         """Test standard log format."""
         logger = BacktesterLogger(format=LogFormat.STANDARD)
-        
+
         # Test that standard format can be applied
         logger.set_format(LogFormat.STANDARD)
         assert logger.format == LogFormat.STANDARD
@@ -235,7 +227,7 @@ class TestBacktesterLogger:
     def test_log_format_detailed(self):
         """Test detailed log format."""
         logger = BacktesterLogger(format=LogFormat.DETAILED)
-        
+
         # Test that detailed format can be applied
         logger.set_format(LogFormat.DETAILED)
         assert logger.format == LogFormat.DETAILED
@@ -243,7 +235,7 @@ class TestBacktesterLogger:
     def test_log_format_json(self):
         """Test JSON log format."""
         logger = BacktesterLogger(format=LogFormat.JSON)
-        
+
         # Test that JSON format can be applied
         logger.set_format(LogFormat.JSON)
         assert logger.format == LogFormat.JSON
@@ -251,7 +243,7 @@ class TestBacktesterLogger:
     def test_context_manager(self):
         """Test logger as context manager."""
         logger = BacktesterLogger()
-        
+
         # Test that logger can be used as context manager
         with logger as ctx_logger:
             assert ctx_logger is not None
@@ -259,13 +251,13 @@ class TestBacktesterLogger:
     def test_get_logger_instance(self):
         """Test internal logger instance creation."""
         logger = BacktesterLogger(name="test_logger")
-        
+
         with patch.object(logger, '_create_logger_instance') as mock_create:
             mock_instance = Mock()
             mock_create.return_value = mock_instance
-            
+
             instance = logger._get_logger()
-            
+
             # The instance should be the mock one we created
             assert instance is mock_instance
             mock_create.assert_called_once()
@@ -273,17 +265,17 @@ class TestBacktesterLogger:
     def test_filter_by_level(self):
         """Test that messages are filtered by log level."""
         logger = BacktesterLogger(level=LogLevel.ERROR)
-        
+
         with patch.object(logger, '_get_logger') as mock_get_logger:
             mock_logger_instance = Mock()
             mock_get_logger.return_value = mock_logger_instance
-            
+
             # Info messages should be filtered out at ERROR level
             logger.info("This should not be logged")
-            
+
             # But error messages should still be logged
             logger.error("This should be logged")
-            
+
             # Verify that only error was logged (note: logger.info calls are filtered at logger level, not at instance level)
             mock_logger_instance.error.assert_called_once()
             # Don't check assert_not_called for info since the filtering happens at logger level, not instance level
@@ -291,19 +283,15 @@ class TestBacktesterLogger:
     def test_extra_data_handling(self):
         """Test handling of extra data in log messages."""
         logger = BacktesterLogger()
-        
+
         with patch.object(logger, '_get_logger') as mock_get_logger:
             mock_logger_instance = Mock()
             mock_get_logger.return_value = mock_logger_instance
-            
-            extra_data = {
-                "user_id": 123,
-                "session_id": "abc123",
-                "backtest_id": "test_001"
-            }
-            
+
+            extra_data = {"user_id": 123, "session_id": "abc123", "backtest_id": "test_001"}
+
             logger.info("Message with extra data", extra_data=extra_data)
-            
+
             # Verify that extra data is included in the log call
             call_args = mock_logger_instance.info.call_args
             assert call_args is not None
@@ -311,11 +299,11 @@ class TestBacktesterLogger:
     def test_performance_metrics_integration(self):
         """Test integration with performance metrics logging."""
         logger = BacktesterLogger()
-        
+
         with patch.object(logger, '_get_logger') as mock_get_logger:
             mock_logger_instance = Mock()
             mock_get_logger.return_value = mock_logger_instance
-            
+
             # Test logging various performance metrics
             metrics = {
                 "total_return": 0.15,
@@ -325,11 +313,11 @@ class TestBacktesterLogger:
                 "win_rate": 0.65,
                 "profit_factor": 1.8,
                 "total_trades": 50,
-                "volatility": 0.18
+                "volatility": 0.18,
             }
-            
+
             logger.log_performance_metrics(metrics)
-            
+
             # Verify that performance metrics are logged
             assert mock_logger_instance.info.call_count > 0
 
