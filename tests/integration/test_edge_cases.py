@@ -68,26 +68,26 @@ class TestDataBoundaryConditions:
         quality_report = data_handler.validate_data_quality(data_with_missing)
 
         assert 'missing_values' in quality_report, "Should detect missing values"
-        assert sum(quality_report['missing_values'].values()) > 0, (
-            "Should identify missing values in data"
-        )
+        assert (
+            sum(quality_report['missing_values'].values()) > 0
+        ), "Should identify missing values in data"
 
         # Test missing value imputation
         try:
             imputed_data = data_handler.impute_missing_data(data_with_missing)
 
             # Should handle imputation without errors
-            assert isinstance(imputed_data, pd.DataFrame), (
-                "Should return DataFrame after imputation"
-            )
+            assert isinstance(
+                imputed_data, pd.DataFrame
+            ), "Should return DataFrame after imputation"
 
             # Should reduce or eliminate missing values
             original_missing = data_with_missing.isnull().sum().sum()
             imputed_missing = imputed_data.isnull().sum().sum()
 
-            assert imputed_missing <= original_missing, (
-                "Imputation should not increase missing values"
-            )
+            assert (
+                imputed_missing <= original_missing
+            ), "Imputation should not increase missing values"
 
         except Exception as e:
             # Imputation may not be implemented for all cases
@@ -120,9 +120,9 @@ class TestDataBoundaryConditions:
                 print("Extreme values handled without errors")
         except Exception as e:
             # Acceptable to fail with extreme values
-            assert "extreme" in str(e).lower() or "invalid" in str(e).lower(), (
-                f"Error should relate to extreme values: {e}"
-            )
+            assert (
+                "extreme" in str(e).lower() or "invalid" in str(e).lower()
+            ), f"Error should relate to extreme values: {e}"
 
 
 @pytest.mark.integration
@@ -360,15 +360,15 @@ class TestSystemBoundaryConditions:
             execution_time = time.time() - start_time
 
             # If it completes, should be within time limits
-            assert execution_time <= engine.max_processing_time * 2, (
-                "Should respect processing time limits"
-            )
+            assert (
+                execution_time <= engine.max_processing_time * 2
+            ), "Should respect processing time limits"
 
         except RuntimeError as e:
             # Should indicate timeout
-            assert "time" in str(e).lower() or "timeout" in str(e).lower(), (
-                f"Should indicate timeout error: {e}"
-            )
+            assert (
+                "time" in str(e).lower() or "timeout" in str(e).lower()
+            ), f"Should indicate timeout error: {e}"
 
     def test_network_failure_handling(self, integration_test_config):
         """Test system response to network failures during data download."""
@@ -560,9 +560,9 @@ class TestEmergencyProcedures:
 
             # Health status should be assessed
             valid_statuses = ['HEALTHY', 'WARNING', 'CRITICAL', 'UNKNOWN']
-            assert health_report['overall_status'] in valid_statuses, (
-                f"Invalid health status: {health_report['overall_status']}"
-            )
+            assert (
+                health_report['overall_status'] in valid_statuses
+            ), f"Invalid health status: {health_report['overall_status']}"
 
     def test_recovery_procedures_validation(self, integration_test_config):
         """Test system recovery procedures and state restoration."""
@@ -593,9 +593,9 @@ class TestEmergencyProcedures:
             perf2 = results2['performance']
 
             # Results should be similar for same data
-            assert abs(perf1['total_return'] - perf2['total_return']) < 0.01, (
-                "Performance should be consistent across runs"
-            )
+            assert (
+                abs(perf1['total_return'] - perf2['total_return']) < 0.01
+            ), "Performance should be consistent across runs"
 
 
 # Utility functions for edge case testing

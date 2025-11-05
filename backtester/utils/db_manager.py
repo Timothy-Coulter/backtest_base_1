@@ -2,7 +2,7 @@
 
 This script provides functions to manage the PostgreSQL database and Optuna studies.
 Usage:
-    python src/db_manager.py --help
+    python -m backtester/utils/db_manager.py --help
 """
 
 import argparse
@@ -17,7 +17,7 @@ from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 load_dotenv()
 
 
-def get_db_connection(include_db=True):
+def get_db_connection(include_db: bool = True) -> dict[str, str]:
     """Get PostgreSQL connection parameters from environment variables."""
     db_user = os.getenv("POSTGRES_USER", "postgres")
     db_password = os.getenv("POSTGRES_PASSWORD")
@@ -42,13 +42,13 @@ def get_db_connection(include_db=True):
         return {"user": db_user, "password": db_password, "host": db_host, "port": db_port}
 
 
-def get_storage_url():
+def get_storage_url() -> str:
     """Get Optuna storage URL."""
     params = get_db_connection(include_db=True)
     return f"postgresql://{params['user']}:{params['password']}@{params['host']}:{params['port']}/{params['database']}"
 
 
-def create_database():
+def create_database() -> None:
     """Create the Optuna database if it doesn't exist."""
     db_name = os.getenv("POSTGRES_DB", "optuna_db")
 
@@ -77,7 +77,7 @@ def create_database():
         raise
 
 
-def drop_database():
+def drop_database() -> None:
     """Drop the Optuna database."""
     db_name = os.getenv("POSTGRES_DB", "optuna_db")
 
@@ -116,14 +116,14 @@ def drop_database():
         raise
 
 
-def recreate_database():
+def recreate_database() -> None:
     """Drop and recreate the database."""
     drop_database()
     create_database()
     print("✓ Database recreated successfully.")
 
 
-def list_studies():
+def list_studies() -> None:
     """List all studies in the database."""
     try:
         storage_url = get_storage_url()
@@ -149,7 +149,7 @@ def list_studies():
         raise
 
 
-def delete_study(study_name):
+def delete_study(study_name: str) -> None:
     """Delete a specific study."""
     response = input(f"⚠️  Are you sure you want to DELETE study '{study_name}'? (yes/no): ")
     if response.lower() != 'yes':
@@ -166,15 +166,14 @@ def delete_study(study_name):
         raise
 
 
-def create_study(study_name, direction="maximize"):
+def create_study(study_name: str, direction: str = "maximize") -> None:
     """Create a new study."""
     try:
         storage_url = get_storage_url()
-        study = optuna.create_study(
+        optuna.create_study(
             study_name=study_name, direction=direction, storage=storage_url, load_if_exists=False
         )
         print(f"✓ Study '{study_name}' created successfully with direction '{direction}'.")
-        return study
 
     except optuna.exceptions.DuplicatedStudyError:
         print(
@@ -185,18 +184,18 @@ def create_study(study_name, direction="maximize"):
         raise
 
 
-def main():
+def main() -> None:
     """Main function to manage PostgreSQL database and Optuna studies."""
     parser = argparse.ArgumentParser(
         description="Manage PostgreSQL database and Optuna studies",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python src/db_manager.py --create-db
-  python src/db_manager.py --list-studies
-  python src/db_manager.py --delete-study portfolio_grid_search
-  python src/db_manager.py --create-study my_new_study --direction maximize
-  python src/db_manager.py --recreate-db
+  python backtester/utils/db_manager.py --create-db
+  python backtester/utils/db_manager.py --list-studies
+  python backtester/utils/db_manager.py --delete-study portfolio_grid_search
+  python backtester/utils/db_manager.py --create-study my_new_study --direction maximize
+  python backtester/utils/db_manager.py --recreate-db
         """,
     )
 

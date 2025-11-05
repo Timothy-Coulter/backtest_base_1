@@ -157,7 +157,7 @@ class RiskManager:
         self.risk_limits = RiskLimits()
         self.exposure_monitor = ExposureMonitor()
         self.stress_tester = StressTester()
-        self.compliance_checker = RiskCompliance()  # type: ignore
+        self.compliance_checker = RiskCompliance()
         self.is_active = True
 
         # Legacy parameters (for backward compatibility)
@@ -412,7 +412,7 @@ class RiskManager:
             f"Leverage adjusted from {current_leverage:.2f} to {adjusted_leverage:.2f}"
         )
 
-        return adjusted_leverage
+        return float(adjusted_leverage)
 
     def start_new_day(self, portfolio_value: float) -> None:
         """Start tracking for a new trading day.
@@ -486,7 +486,7 @@ class RiskManager:
 
         # Historical simulation VaR (negative value indicating loss)
         var = np.percentile(recent_returns, (1 - confidence_level) * 100)
-        return var
+        return float(var)
 
     def calculate_expected_shortfall(
         self, returns: pd.Series, confidence_level: float = 0.95, lookback_period: int = 252
@@ -511,7 +511,7 @@ class RiskManager:
         )
         # Average of returns worse than (more negative than) VaR
         tail_returns = recent_returns[recent_returns <= var]
-        return tail_returns.mean() if len(tail_returns) > 0 else var
+        return float(tail_returns.mean()) if len(tail_returns) > 0 else float(var)
 
     def calculate_portfolio_beta(
         self, portfolio_returns: pd.Series, market_returns: pd.Series, lookback_period: int = 252
@@ -545,7 +545,7 @@ class RiskManager:
         if market_variance == 0:
             return 0.0
 
-        return covariance / market_variance
+        return float(covariance / market_variance)
 
     def calculate_correlation_matrix(
         self, asset_returns: Any, lookback_period: int = 252
@@ -1499,7 +1499,7 @@ class PortfolioRiskAnalyzer:
         lookback_period: int = 252,
         confidence_level: float = 0.95,
         risk_free_rate: float = 0.02,
-    ):
+    ) -> None:
         """Initialize portfolio risk analyzer."""
         self.lookback_period = lookback_period
         self.confidence_level = confidence_level
@@ -1638,7 +1638,7 @@ class PortfolioRiskAnalyzer:
 class RiskReport:
     """Risk reporting and dashboard generation."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize risk report generator."""
         pass
 
@@ -1826,7 +1826,7 @@ class StressTester:
                 }
         return results
 
-    def add_custom_scenarios(self, scenarios: dict[str, Any]):
+    def add_custom_scenarios(self, scenarios: dict[str, Any]) -> None:
         """Add custom stress scenarios."""
         self.stress_scenarios.update(scenarios)
 
@@ -1834,17 +1834,17 @@ class StressTester:
 class RiskCompliance:
     """Risk compliance monitoring."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize risk compliance."""
-        self.regulatory_limits = {}
-        self.internal_limits = {}
-        self.compliance_rules = {}
+        self.regulatory_limits: dict[str, float] = {}
+        self.internal_limits: dict[str, Any] = {}
+        self.compliance_rules: dict[str, Any] = {}
 
-    def set_regulatory_limits(self, limits: dict[str, float]):
+    def set_regulatory_limits(self, limits: dict[str, float]) -> None:
         """Set regulatory limits."""
         self.regulatory_limits.update(limits)
 
-    def set_internal_policies(self, policies: dict[str, Any]):
+    def set_internal_policies(self, policies: dict[str, Any]) -> None:
         """Set internal policies."""
         self.internal_limits.update(policies)
 
@@ -1927,7 +1927,7 @@ class RiskCompliance:
 class RiskAttribution:
     """Risk attribution analysis."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize risk attribution."""
         self.attribution_methods = ['brinson', 'factor', 'historical']
         self.benchmark_selection = 'market_cap_weighted'

@@ -199,9 +199,9 @@ def assert_valid_dataframe(df, expected_columns=None):
     assert isinstance(df, pd.DataFrame), "Expected DataFrame"
     assert not df.empty, "DataFrame should not be empty"
     if expected_columns:
-        assert list(df.columns) == expected_columns, (
-            f"Expected columns {expected_columns}, got {list(df.columns)}"
-        )
+        assert (
+            list(df.columns) == expected_columns
+        ), f"Expected columns {expected_columns}, got {list(df.columns)}"
     assert df.index.is_monotonic_increasing, "DataFrame index should be sorted"
 
 

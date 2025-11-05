@@ -535,9 +535,9 @@ def assert_dataframe_equal(df1, df2, check_dtype=False, check_exact=True):
     assert isinstance(df1, pd.DataFrame), "First argument must be DataFrame"
     assert isinstance(df2, pd.DataFrame), "Second argument must be DataFrame"
     assert df1.shape == df2.shape, f"Shape mismatch: {df1.shape} vs {df2.shape}"
-    assert list(df1.columns) == list(df2.columns), (
-        f"Column mismatch: {list(df1.columns)} vs {list(df2.columns)}"
-    )
+    assert list(df1.columns) == list(
+        df2.columns
+    ), f"Column mismatch: {list(df1.columns)} vs {list(df2.columns)}"
 
     if check_dtype:
         assert df1.dtypes.equals(df2.dtypes), "Data type mismatch"

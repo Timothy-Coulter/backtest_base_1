@@ -22,32 +22,50 @@ class DataUtils:
 
         # Check required columns
         required_cols = ['Open', 'High', 'Low', 'Close']
-        for col in required_cols:
-            if col not in data.columns:
-                errors.append(f"Missing required column: {col}")
+        errors.extend(self._check_required_columns(data, required_cols))
 
         if errors:
             return False, errors
 
         # Check for negative values
-        for col in required_cols:
-            if (data[col] < 0).any():
-                errors.append(f"Negative values found in {col} column")
+        errors.extend(self._check_negative_values(data, required_cols))
 
         # Check OHLC relationships
         if len(data) > 0:
-            if (data['High'] < data['Open']).any():
-                errors.append("High price is less than Open price in some rows")
-            if (data['High'] < data['Close']).any():
-                errors.append("High price is less than Close price in some rows")
-            if (data['Low'] > data['Open']).any():
-                errors.append("Low price is greater than Open price in some rows")
-            if (data['Low'] > data['Close']).any():
-                errors.append("Low price is greater than Close price in some rows")
-            if (data['High'] < data['Low']).any():
-                errors.append("High price is less than Low price in some rows")
+            errors.extend(self._check_ohlc_relationships(data))
 
         return len(errors) == 0, errors
+
+    def _check_required_columns(self, data: pd.DataFrame, required_cols: list[str]) -> list[str]:
+        """Check if required columns are present."""
+        errors = []
+        for col in required_cols:
+            if col not in data.columns:
+                errors.append(f"Missing required column: {col}")
+        return errors
+
+    def _check_negative_values(self, data: pd.DataFrame, columns: list[str]) -> list[str]:
+        """Check for negative values in specified columns."""
+        errors = []
+        for col in columns:
+            if (data[col] < 0).any():
+                errors.append(f"Negative values found in {col} column")
+        return errors
+
+    def _check_ohlc_relationships(self, data: pd.DataFrame) -> list[str]:
+        """Check OHLC price relationships."""
+        errors = []
+        if (data['High'] < data['Open']).any():
+            errors.append("High price is less than Open price in some rows")
+        if (data['High'] < data['Close']).any():
+            errors.append("High price is less than Close price in some rows")
+        if (data['Low'] > data['Open']).any():
+            errors.append("Low price is greater than Open price in some rows")
+        if (data['Low'] > data['Close']).any():
+            errors.append("Low price is greater than Close price in some rows")
+        if (data['High'] < data['Low']).any():
+            errors.append("High price is less than Low price in some rows")
+        return errors
 
     def analyze_price_movements(self, prices: pd.Series) -> dict[str, Any]:
         """Analyze price movements and trends.

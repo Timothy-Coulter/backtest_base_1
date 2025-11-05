@@ -143,9 +143,9 @@ class TestCompleteBacktestCycle:
 
         # In sideways markets, returns should be modest
         # Strategy should avoid excessive trading that erodes returns
-        assert abs(performance['total_return']) < 1.0, (
-            "Returns should be moderate in sideways market"
-        )
+        assert (
+            abs(performance['total_return']) < 1.0
+        ), "Returns should be moderate in sideways market"
 
         # Transaction costs should not dominate
         if 'total_trades' in performance and performance['total_trades'] > 0:
@@ -201,9 +201,9 @@ class TestCompleteBacktestCycle:
                 tf_perf = tf_results['performance']
 
                 # Returns should be in reasonable range across timeframes
-                assert abs(tf_perf['total_return']) < 2.0, (
-                    f"Timeframe {tf_name} has unreasonable returns"
-                )
+                assert (
+                    abs(tf_perf['total_return']) < 2.0
+                ), f"Timeframe {tf_name} has unreasonable returns"
 
         print(f"Multi-timeframe test completed: {len(timeframe_results)} timeframes")
 
@@ -247,9 +247,9 @@ class TestCompleteBacktestCycle:
 
         # Validate metric ranges
         assert performance['total_return'] is not None, "Total return should be calculated"
-        assert isinstance(performance['sharpe_ratio'], (int, float)), (
-            "Sharpe ratio should be numeric"
-        )
+        assert isinstance(
+            performance['sharpe_ratio'], (int, float)
+        ), "Sharpe ratio should be numeric"
         assert performance['max_drawdown'] <= 0, "Max drawdown should be negative or zero"
 
         # Check that trading occurred
@@ -335,9 +335,9 @@ class TestDynamicRebalancingTests:
             base_return = (final_base - initial_base) / initial_base
 
             # Alpha should generally perform better in bull market
-            assert alpha_return >= base_return - 0.1, (
-                "Alpha pool should perform at least as well as base in bull market"
-            )
+            assert (
+                alpha_return >= base_return - 0.1
+            ), "Alpha pool should perform at least as well as base in bull market"
 
         print("Performance-based redistribution test completed")
 
@@ -506,9 +506,9 @@ class TestTaxOptimizationWorkflow:
 
             # Tax should be tracked and reasonable
             assert cumulative_tax >= 0, "Cumulative tax should be non-negative"
-            assert cumulative_tax < performance['final_portfolio_value'], (
-                "Tax should not exceed portfolio value"
-            )
+            assert (
+                cumulative_tax < performance['final_portfolio_value']
+            ), "Tax should not exceed portfolio value"
 
         print("Year-end tax calculations test completed")
 

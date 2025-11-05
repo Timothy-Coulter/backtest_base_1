@@ -91,9 +91,9 @@ class TestDataStrategyIntegration:
             price_diff_50 = abs(sample_market_data['Close'] - indicators_direct['sma_50'])
 
             # This should generally be true for trending data
-            assert price_diff_20.mean() <= price_diff_50.mean() * 1.5, (
-                "SMA 20 should generally be closer to prices than SMA 50"
-            )
+            assert (
+                price_diff_20.mean() <= price_diff_50.mean() * 1.5
+            ), "SMA 20 should generally be closer to prices than SMA 50"
 
     def test_data_validation_integration(self, sample_market_data, backtester_components):
         """Test data validation integration between DataHandler and Strategy."""
@@ -200,9 +200,9 @@ class TestStrategyPortfolioIntegration:
 
         # Portfolio should have some activity
         final_portfolio_value = portfolio.get_total_value()
-        assert final_portfolio_value != initial_portfolio_value, (
-            "Portfolio value should change with trading activity"
-        )
+        assert (
+            final_portfolio_value != initial_portfolio_value
+        ), "Portfolio value should change with trading activity"
 
     def test_portfolio_state_transition(
         self, sample_market_data, backtester_components, integration_helpers
@@ -245,9 +245,9 @@ class TestStrategyPortfolioIntegration:
 
         # Portfolio state should change with market movement and signals
         assert portfolio.get_total_value() > 0, "Portfolio should maintain value"
-        assert integration_helpers.validate_portfolio_state(portfolio), (
-            "Portfolio state should be valid throughout transitions"
-        )
+        assert integration_helpers.validate_portfolio_state(
+            portfolio
+        ), "Portfolio state should be valid throughout transitions"
 
     def test_signal_timing_coordination(self, sample_market_data, backtester_components):
         """Test coordination between signal generation and portfolio updates."""
@@ -282,15 +282,15 @@ class TestStrategyPortfolioIntegration:
             portfolio_times.append(current_time)
 
         # Validate timing coordination
-        assert len(portfolio_times) == len(test_data), (
-            "Portfolio should be updated for each time point"
-        )
+        assert len(portfolio_times) == len(
+            test_data
+        ), "Portfolio should be updated for each time point"
 
         # Signals should be generated at appropriate times (when enough data is available)
         min_signals_expected = max(0, len(test_data) - strategy.ma_long)
-        assert len(signal_times) >= min_signals_expected * 0.1, (
-            "Should generate signals at reasonable frequency"
-        )
+        assert (
+            len(signal_times) >= min_signals_expected * 0.1
+        ), "Should generate signals at reasonable frequency"
 
 
 @pytest.mark.integration
@@ -359,9 +359,9 @@ class TestPortfolioRiskIntegration:
         stress_data = sample_market_data.copy()
 
         # Create a significant decline to trigger risk limits
-        stress_data.iloc[stress_data.shape[0] // 2 :, stress_data.columns.get_loc('Close')] *= (
-            0.9  # 10% decline
-        )
+        stress_data.iloc[
+            stress_data.shape[0] // 2 :, stress_data.columns.get_loc('Close')
+        ] *= 0.9  # 10% decline
 
         risk_violations = 0
         risk_actions_taken = []
@@ -583,9 +583,9 @@ class TestBrokerExecutionIntegration:
             price_impact = abs(fill_price - test_price) / test_price
             max_expected_slippage = 3 * broker.slippage_std
 
-            assert price_impact <= max_expected_slippage * 3, (
-                f"Slippage {price_impact:.4f} exceeds reasonable limits"
-            )
+            assert (
+                price_impact <= max_expected_slippage * 3
+            ), f"Slippage {price_impact:.4f} exceeds reasonable limits"
 
     def test_order_status_tracking(self, sample_market_data, backtester_components):
         """Test order status tracking and reporting."""
@@ -672,9 +672,9 @@ class TestPerformanceCalculationIntegration:
 
         # Validate metric values
         expected_total_return = (final_value - initial_value) / initial_value
-        assert abs(metrics['total_return'] - expected_total_return) < 0.001, (
-            "Total return should be calculated correctly"
-        )
+        assert (
+            abs(metrics['total_return'] - expected_total_return) < 0.001
+        ), "Total return should be calculated correctly"
 
         assert metrics['max_drawdown'] < 0, "Max drawdown should be negative"
         assert isinstance(metrics['sharpe_ratio'], (int, float)), "Sharpe ratio should be numeric"
@@ -701,9 +701,9 @@ class TestPerformanceCalculationIntegration:
             benchmark_return = metrics['benchmark_total_return']
             excess_return = metrics['excess_return']
 
-            assert abs(excess_return - (portfolio_return - benchmark_return)) < 0.001, (
-                "Excess return should be portfolio return minus benchmark return"
-            )
+            assert (
+                abs(excess_return - (portfolio_return - benchmark_return)) < 0.001
+            ), "Excess return should be portfolio return minus benchmark return"
 
     def test_risk_adjusted_return_calculations(self, sample_market_data, backtester_components):
         """Test risk-adjusted return calculations."""
@@ -732,9 +732,9 @@ class TestPerformanceCalculationIntegration:
 
         # Sharpe ratio should be reasonable for positive returns
         if metrics['total_return'] > 0:
-            assert metrics['sharpe_ratio'] > 0, (
-                "Sharpe ratio should be positive for good performance"
-            )
+            assert (
+                metrics['sharpe_ratio'] > 0
+            ), "Sharpe ratio should be positive for good performance"
 
         # Sortino ratio considers downside deviation
         assert isinstance(metrics['sortino_ratio'], (int, float)), "Sortino ratio should be numeric"

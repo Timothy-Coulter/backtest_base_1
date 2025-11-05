@@ -10,7 +10,7 @@ class FormatUtils:
 
     def currency(
         self,
-        amount: float,
+        amount: float | None,
         symbol: str = "$",
         decimal: str = ".",
         thousands: str = ",",
@@ -31,11 +31,11 @@ class FormatUtils:
         # Handle non-numeric types gracefully
         if amount is None:
             amount = 0.0
-        elif not isinstance(amount, (int, float)):
-            try:
-                amount = float(amount)
-            except (ValueError, TypeError):
-                amount = 0.0
+
+        try:
+            amount = float(amount)
+        except (ValueError, TypeError):
+            amount = 0.0
 
         # Format with thousands separator
         formatted = f"{amount:,.{decimals}f}"
@@ -54,7 +54,7 @@ class FormatUtils:
         """
         return f"{value * 100:.{decimals}f}%"
 
-    def number(self, value: int | float, decimals: int = 0) -> str:
+    def number(self, value: int | float | None, decimals: int = 0) -> str:
         """Format number with thousands separator.
 
         Args:
@@ -65,20 +65,17 @@ class FormatUtils:
             Formatted number string
         """
         # Handle non-numeric types gracefully
-        if value is None:
+        try:
+            value = 0.0 if value is None else float(value)
+        except (ValueError, TypeError):
             value = 0.0
-        elif not isinstance(value, (int, float)):
-            try:
-                value = float(value)
-            except (ValueError, TypeError):
-                value = 0.0
 
         if decimals == 0:
             return f"{value:,.0f}"
         else:
             return f"{value:,.{decimals}f}"
 
-    def compact_number(self, value: int | float) -> str:
+    def compact_number(self, value: int | float | None) -> str:
         """Format number in compact form (e.g., 1.23M, 4.56K).
 
         Args:
@@ -88,10 +85,10 @@ class FormatUtils:
             Compact formatted number string
         """
         # Handle non-numeric types gracefully
-        if value is None:
+        try:
+            value = 0.0 if value is None else float(value)
+        except (ValueError, TypeError):
             value = 0.0
-        elif not isinstance(value, (int, float)):
-            value = float(value)
 
         abs_value = abs(value)
 
@@ -214,7 +211,11 @@ class FormatUtils:
 
 # Standalone formatting functions for backward compatibility
 def format_currency(
-    amount: float, symbol: str = "$", decimal: str = ".", thousands: str = ",", decimals: int = 2
+    amount: float | None,
+    symbol: str = "$",
+    decimal: str = ".",
+    thousands: str = ",",
+    decimals: int = 2,
 ) -> str:
     """Format amount as currency."""
     formatter = FormatUtils()

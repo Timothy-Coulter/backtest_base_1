@@ -50,7 +50,7 @@ class ValidationUtils:
         except (ValueError, TypeError):
             return False
 
-    def validate_config(self, config: dict[str, Any]) -> bool:
+    def validate_config(self, config: Any) -> bool:
         """Validate configuration dictionary.
 
         Args:
@@ -77,6 +77,10 @@ class ValidationUtils:
 
         # Validate other numeric fields if present
         numeric_fields = ['commission_rate', 'leverage', 'max_positions']
+        return self._validate_numeric_fields(config, numeric_fields)
+
+    def _validate_numeric_fields(self, config: dict[str, Any], numeric_fields: list[str]) -> bool:
+        """Validate numeric fields in configuration."""
         for field in numeric_fields:
             if field in config and config[field] is not None:
                 if not self.validate_numeric(config[field]):
