@@ -341,3 +341,28 @@ class DataHandler:
             )
 
         return stats
+
+
+# Standalone function for compatibility with existing code
+def get_data(
+    ticker: str,
+    start_date: str = "1990-01-01",
+    end_date: str = "2025-01-01",
+    interval: str = "1mo",
+) -> pd.DataFrame:
+    """Load market data for a given ticker (standalone function for compatibility).
+
+    This is a convenience function that creates a DataHandler instance
+    and calls its get_data method for backward compatibility.
+
+    Args:
+        ticker: Stock/asset ticker symbol
+        start_date: Start date in 'YYYY-MM-DD' format
+        end_date: End date in 'YYYY-MM-DD' format
+        interval: Data frequency ('1d', '1wk', '1mo')
+
+    Returns:
+        DataFrame with OHLC data (Open, High, Low, Close)
+    """
+    handler = DataHandler()
+    return handler.get_data(ticker, start_date, end_date, interval)

@@ -6,6 +6,8 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "black>=25.9.0",
+    "findatapy>=0.1.40",
+    "fmp-python>=0.1.5",
     "isort>=7.0.0",
     "matplotlib>=3.10.7",
     "mypy>=1.18.2",
@@ -96,6 +98,7 @@ select = [
 ]
 ignore = [
   "E501",  # handled by formatter
+  "N999",  # directory name is outside of code control - has dashes and special chars
 ]
 
 [tool.ruff.lint.pydocstyle]

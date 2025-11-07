@@ -1,10 +1,12 @@
 """Unit tests for DataHandler class."""
 
-import pytest
-import pandas as pd
-import numpy as np
 import logging
+from pathlib import Path
 from unittest.mock import Mock, patch
+
+import numpy as np
+import pandas as pd
+import pytest
 
 from backtester.data.data_handler import DataHandler
 
@@ -13,7 +15,7 @@ class TestDataHandler:
     """Test DataHandler class methods."""
 
     @pytest.fixture
-    def sample_ohlc_data(self):
+    def sample_ohlc_data(self) -> pd.DataFrame:
         """Create sample OHLC data for testing."""
         dates = pd.date_range('2023-01-01', periods=100, freq='D')
 
@@ -34,7 +36,7 @@ class TestDataHandler:
         return data
 
     @pytest.fixture
-    def handler(self):
+    def handler(self) -> DataHandler:
         """Create DataHandler instance for testing."""
         config = {
             'data_source': 'yahoo',
@@ -46,7 +48,7 @@ class TestDataHandler:
         logger = Mock(spec=logging.Logger)
         return DataHandler(config=config, logger=logger)
 
-    def test_init_default_config(self):
+    def test_init_default_config(self) -> None:
         """Test DataHandler initialization with default config."""
         handler = DataHandler()
 
@@ -58,7 +60,7 @@ class TestDataHandler:
         assert isinstance(handler.data_cache, dict)
         assert isinstance(handler.logger, logging.Logger)
 
-    def test_init_custom_config(self):
+    def test_init_custom_config(self) -> None:
         """Test DataHandler initialization with custom config."""
         custom_config = {
             'data_source': 'test',
@@ -74,7 +76,7 @@ class TestDataHandler:
         assert handler.config == custom_config
         assert handler.logger == custom_logger
 
-    def test_load_data_alias(self, handler, sample_ohlc_data):
+    def test_load_data_alias(self, handler: DataHandler, sample_ohlc_data: pd.DataFrame) -> None:
         """Test that load_data is an alias for get_data."""
         with patch.object(handler, 'get_data', return_value=sample_ohlc_data) as mock_get:
             result = handler.load_data('TEST', '2023-01-01', '2023-12-31', '1d')
@@ -83,7 +85,9 @@ class TestDataHandler:
             pd.testing.assert_frame_equal(result, sample_ohlc_data)
 
     @patch.object(DataHandler, 'get_data')
-    def test_load_multiple_symbols(self, mock_get_data, handler, sample_ohlc_data):
+    def test_load_multiple_symbols(
+        self, mock_get_data: Mock, handler: DataHandler, sample_ohlc_data: pd.DataFrame
+    ) -> None:
         """Test loading multiple symbols."""
         mock_get_data.return_value = sample_ohlc_data
 
@@ -99,7 +103,9 @@ class TestDataHandler:
 
         assert mock_get_data.call_count == 3
 
-    def test_aggregate_data_ohlcv(self, handler, sample_ohlc_data):
+    def test_aggregate_data_ohlcv(
+        self, handler: DataHandler, sample_ohlc_data: pd.DataFrame
+    ) -> None:
         """Test data aggregation with OHLCV method."""
         # Create daily data
         daily_data = sample_ohlc_data.resample('D').last()
@@ -115,7 +121,9 @@ class TestDataHandler:
         for col in expected_columns:
             assert col in weekly_data.columns
 
-    def test_aggregate_data_simple(self, handler, sample_ohlc_data):
+    def test_aggregate_data_simple(
+        self, handler: DataHandler, sample_ohlc_data: pd.DataFrame
+    ) -> None:
         """Test data aggregation with simple method."""
         daily_data = sample_ohlc_data.resample('D').last()
 
@@ -125,7 +133,7 @@ class TestDataHandler:
         assert isinstance(weekly_data, pd.DataFrame)
         assert weekly_data.index.freq is not None
 
-    def test_clean_data(self, handler, sample_ohlc_data):
+    def test_clean_data(self, handler: DataHandler, sample_ohlc_data: pd.DataFrame) -> None:
         """Test data cleaning functionality."""
         # Create data with some issues
         dirty_data = sample_ohlc_data.copy()
@@ -142,14 +150,16 @@ class TestDataHandler:
         for col in ['Open', 'High', 'Low', 'Close']:
             assert pd.api.types.is_numeric_dtype(cleaned_data[col])
 
-    def test_validate_data_empty(self, handler):
+    def test_validate_data_empty(self, handler: DataHandler) -> None:
         """Test validation with empty data."""
         empty_data = pd.DataFrame()
 
         with pytest.raises(ValueError, match="Data is empty after cleaning"):
             handler._validate_data(empty_data)
 
-    def test_validate_data_negative_prices(self, handler, sample_ohlc_data):
+    def test_validate_data_negative_prices(
+        self, handler: DataHandler, sample_ohlc_data: pd.DataFrame
+    ) -> None:
         """Test validation with negative prices."""
         bad_data = sample_ohlc_data.copy()
         bad_data.loc[bad_data.index[0], 'Close'] = -10
@@ -159,7 +169,9 @@ class TestDataHandler:
         # Should filter out negative prices
         assert (validated_data['Close'] > 0).all()
 
-    def test_validate_data_invalid_ohlc(self, handler, sample_ohlc_data):
+    def test_validate_data_invalid_ohlc(
+        self, handler: DataHandler, sample_ohlc_data: pd.DataFrame
+    ) -> None:
         """Test validation with invalid OHLC relationships."""
         bad_data = sample_ohlc_data.copy()
         # Make High < Low
@@ -172,7 +184,9 @@ class TestDataHandler:
         # Should filter out invalid OHLC
         assert len(validated_data) < len(bad_data)
 
-    def test_validate_data_strict_mode(self, handler, sample_ohlc_data):
+    def test_validate_data_strict_mode(
+        self, handler: DataHandler, sample_ohlc_data: pd.DataFrame
+    ) -> None:
         """Test validation in strict mode."""
         bad_data = sample_ohlc_data.copy()
         bad_data.loc[bad_data.index[0], 'High'] = 95
@@ -184,7 +198,7 @@ class TestDataHandler:
         with pytest.raises(ValueError, match="Data validation failed"):
             strict_handler._validate_data(bad_data)
 
-    def test_compute_returns(self, handler, sample_ohlc_data):
+    def test_compute_returns(self, handler: DataHandler, sample_ohlc_data: pd.DataFrame) -> None:
         """Test return calculation."""
         returns = handler.compute_returns(sample_ohlc_data, 'Close')
 
@@ -196,12 +210,16 @@ class TestDataHandler:
         expected_returns = sample_ohlc_data['Close'].pct_change().dropna()
         pd.testing.assert_series_equal(returns, expected_returns, check_names=False)
 
-    def test_compute_returns_invalid_column(self, handler, sample_ohlc_data):
+    def test_compute_returns_invalid_column(
+        self, handler: DataHandler, sample_ohlc_data: pd.DataFrame
+    ) -> None:
         """Test return calculation with invalid column."""
         with pytest.raises(ValueError, match="Column 'InvalidColumn' not found in data"):
             handler.compute_returns(sample_ohlc_data, 'InvalidColumn')
 
-    def test_add_technical_indicators(self, handler, sample_ohlc_data):
+    def test_add_technical_indicators(
+        self, handler: DataHandler, sample_ohlc_data: pd.DataFrame
+    ) -> None:
         """Test technical indicators addition."""
         enhanced_data = handler.add_technical_indicators(sample_ohlc_data)
 
@@ -227,7 +245,9 @@ class TestDataHandler:
         for col in original_columns:
             assert col in enhanced_data.columns
 
-    def test_export_data_csv(self, handler, sample_ohlc_data, tmp_path):
+    def test_export_data_csv(
+        self, handler: DataHandler, sample_ohlc_data: pd.DataFrame, tmp_path: Path
+    ) -> None:
         """Test data export to CSV."""
         csv_file = tmp_path / "test_data.csv"
 
@@ -240,7 +260,9 @@ class TestDataHandler:
         imported_data = pd.read_csv(csv_file, index_col=0, parse_dates=True)
         assert len(imported_data) == len(sample_ohlc_data)
 
-    def test_export_data_json(self, handler, sample_ohlc_data, tmp_path):
+    def test_export_data_json(
+        self, handler: DataHandler, sample_ohlc_data: pd.DataFrame, tmp_path: Path
+    ) -> None:
         """Test data export to JSON."""
         json_file = tmp_path / "test_data.json"
 
@@ -249,12 +271,14 @@ class TestDataHandler:
         assert json_file.exists()
         assert result_path == str(json_file)
 
-    def test_export_data_invalid_format(self, handler, sample_ohlc_data):
+    def test_export_data_invalid_format(
+        self, handler: DataHandler, sample_ohlc_data: pd.DataFrame
+    ) -> None:
         """Test data export with invalid format."""
         with pytest.raises(ValueError, match="Unsupported export format"):
             handler.export_data(sample_ohlc_data, 'invalid_format')
 
-    def test_get_data_info(self, handler, sample_ohlc_data):
+    def test_get_data_info(self, handler: DataHandler, sample_ohlc_data: pd.DataFrame) -> None:
         """Test data information retrieval."""
         info = handler.get_data_info(sample_ohlc_data)
 
@@ -268,7 +292,7 @@ class TestDataHandler:
         assert info['date_range']['start'] == sample_ohlc_data.index[0]
         assert info['date_range']['end'] == sample_ohlc_data.index[-1]
 
-    def test_get_statistics(self, handler, sample_ohlc_data):
+    def test_get_statistics(self, handler: DataHandler, sample_ohlc_data: pd.DataFrame) -> None:
         """Test statistics calculation."""
         stats = handler.get_statistics(sample_ohlc_data)
 
@@ -295,7 +319,7 @@ class TestDataHandler:
         assert stats['final_price'] == sample_ohlc_data['Close'].iloc[-1]
         assert stats['total_periods'] == len(sample_ohlc_data)
 
-    def test_process_method(self, handler, sample_ohlc_data):
+    def test_process_method(self, handler: DataHandler, sample_ohlc_data: pd.DataFrame) -> None:
         """Test data processing method."""
         config = {'fill_missing': True, 'preprocess_data': True}
         processing_handler = DataHandler(config=config)
@@ -307,7 +331,9 @@ class TestDataHandler:
         for indicator in expected_indicators:
             assert indicator in processed_data.columns
 
-    def test_process_method_no_preprocessing(self, handler, sample_ohlc_data):
+    def test_process_method_no_preprocessing(
+        self, handler: DataHandler, sample_ohlc_data: pd.DataFrame
+    ) -> None:
         """Test data processing with preprocessing disabled."""
         config = {'fill_missing': False, 'preprocess_data': False}
         processing_handler = DataHandler(config=config)

@@ -1,15 +1,17 @@
 """Tests for DataHandler integration with DataPreprocessor functionality."""
 
-import pytest
-import pandas as pd
-import numpy as np
 import logging
 from unittest.mock import Mock
+
+import numpy as np
+import pandas as pd
+import pytest
+
 from backtester.data.data_handler import DataHandler
 
 
 @pytest.fixture
-def sample_data():
+def sample_data() -> pd.DataFrame:
     """Create sample OHLC data for testing."""
     dates = pd.date_range('2023-01-01', '2023-12-31', freq='D')
     data = pd.DataFrame(
@@ -33,7 +35,7 @@ def sample_data():
 
 
 @pytest.fixture
-def handler():
+def handler() -> DataHandler:
     """Create DataHandler instance for testing."""
     config = {
         'preprocess_data': True,
@@ -47,15 +49,17 @@ def handler():
 class TestDataHandlerIntegration:
     """Test DataHandler integration after removing DataPreprocessor."""
 
-    def test_data_preprocessor_attribute_removed(self):
+    def test_data_preprocessor_attribute_removed(self) -> None:
         """Test that data_preprocessor attribute no longer exists."""
         handler = DataHandler()
 
         # This should raise AttributeError
         with pytest.raises(AttributeError):
-            _ = handler.data_preprocessor
+            _ = handler.data_preprocessor  # type: ignore[attr-defined]
 
-    def test_process_method_integration(self, handler, sample_data):
+    def test_process_method_integration(
+        self, handler: DataHandler, sample_data: pd.DataFrame
+    ) -> None:
         """Test that process method works correctly with integrated functionality."""
         processed_data = handler.process(sample_data)
 
@@ -65,7 +69,9 @@ class TestDataHandlerIntegration:
         for indicator in expected_indicators:
             assert indicator in processed_data.columns, f"Technical indicator {indicator} not found"
 
-    def test_add_technical_indicators_method(self, handler, sample_data):
+    def test_add_technical_indicators_method(
+        self, handler: DataHandler, sample_data: pd.DataFrame
+    ) -> None:
         """Test that add_technical_indicators method works correctly."""
         enhanced_data = handler.add_technical_indicators(sample_data)
 
@@ -80,7 +86,7 @@ class TestDataHandlerIntegration:
         for col in original_columns:
             assert col in enhanced_data.columns, f"Original column {col} missing"
 
-    def test_process_with_preprocess_disabled(self, sample_data):
+    def test_process_with_preprocess_disabled(self, sample_data: pd.DataFrame) -> None:
         """Test that process method works when preprocessing is disabled."""
         config = {'preprocess_data': False, 'fill_missing': False}
         logger = Mock(spec=logging.Logger)
@@ -92,11 +98,13 @@ class TestDataHandlerIntegration:
         expected_indicators = ['SMA_5', 'SMA_10', 'SMA_20', 'EMA_5', 'EMA_10', 'EMA_20']
 
         for indicator in expected_indicators:
-            assert indicator not in processed_data.columns, (
-                f"Indicator {indicator} should not be present"
-            )
+            assert (
+                indicator not in processed_data.columns
+            ), f"Indicator {indicator} should not be present"
 
-    def test_no_duplicate_functionality(self, handler, sample_data):
+    def test_no_duplicate_functionality(
+        self, handler: DataHandler, sample_data: pd.DataFrame
+    ) -> None:
         """Test that there's no duplication of functionality."""
         # Test that process and add_technical_indicators produce consistent results
         processed_data = handler.process(sample_data)
@@ -114,9 +122,9 @@ class TestDataHandlerIntegration:
             if col not in ['Open', 'High', 'Low', 'Close', 'Volume']
         ]
 
-        assert set(processed_indicators) == set(indicators_indicators), (
-            "Inconsistent indicators between methods"
-        )
+        assert set(processed_indicators) == set(
+            indicators_indicators
+        ), "Inconsistent indicators between methods"
 
 
 if __name__ == "__main__":

@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def test_data_handler_integration():
+def test_data_handler_integration() -> bool:
     """Test that DataHandler works correctly after integrating DataPreprocessor functionality."""
     logger.info("Testing DataHandler integration...")
 
@@ -74,7 +74,7 @@ def test_data_handler_integration():
         return False
 
 
-def test_broken_reference():
+def test_broken_reference() -> bool:
     """Test that the old broken reference no longer exists."""
     logger.info("Testing that broken data_preprocessor reference is fixed...")
 
@@ -84,7 +84,7 @@ def test_broken_reference():
     try:
         # The old broken code would be: handler.data_preprocessor.calculate_technical_indicators
         # This should raise AttributeError, which is expected
-        _ = handler.data_preprocessor
+        _ = handler.data_preprocessor  # type: ignore[attr-defined]
         logger.error("✗ data_preprocessor attribute still exists (unexpected)")
         return False
     except AttributeError:

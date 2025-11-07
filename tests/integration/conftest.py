@@ -501,9 +501,9 @@ class IntegrationTestHelpers:
                 'HOLD',
             ], f"Invalid signal type: {signal['signal_type']}"
 
-            assert isinstance(signal['price'], (int, float)), (
-                f"Invalid price type: {type(signal['price'])}"
-            )
+            assert isinstance(
+                signal['price'], (int, float)
+            ), f"Invalid price type: {type(signal['price'])}"
             assert signal['price'] > 0, f"Invalid price value: {signal['price']}"
 
         return True
@@ -519,12 +519,12 @@ class IntegrationTestHelpers:
         base_leverage = portfolio.base_pool.get_current_leverage()
         alpha_leverage = portfolio.alpha_pool.get_current_leverage()
 
-        assert base_leverage <= portfolio.leverage_base * 1.1, (
-            f"Base pool leverage {base_leverage} exceeds limit {portfolio.leverage_base}"
-        )
-        assert alpha_leverage <= portfolio.leverage_alpha * 1.1, (
-            f"Alpha pool leverage {alpha_leverage} exceeds limit {portfolio.leverage_alpha}"
-        )
+        assert (
+            base_leverage <= portfolio.leverage_base * 1.1
+        ), f"Base pool leverage {base_leverage} exceeds limit {portfolio.leverage_base}"
+        assert (
+            alpha_leverage <= portfolio.leverage_alpha * 1.1
+        ), f"Alpha pool leverage {alpha_leverage} exceeds limit {portfolio.leverage_alpha}"
 
         return True
 
