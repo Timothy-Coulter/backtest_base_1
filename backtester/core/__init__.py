@@ -5,7 +5,7 @@ from .config import (
     BacktestConfig,
     BacktesterConfig,
     ConfigValidator,
-    DataConfig,
+    DataRetrievalConfig,
     ExecutionConfig,
     PerformanceConfig,
     PortfolioConfig,

@@ -186,7 +186,7 @@ class RiskControlConfig:
 class BacktesterConfig:
     """Main configuration class for the backtester."""
 
-    data: DataConfig | None = field(default=None)
+    data: DataRetrievalConfig | None = field(default=None)
     strategy: StrategyConfig | None = field(default=None)
     portfolio: PortfolioConfig | None = field(default=None)
     execution: ExecutionConfig | None = field(default=None)
@@ -202,7 +202,7 @@ class BacktesterConfig:
     def __post_init__(self) -> None:
         """Initialize default configurations if not provided."""
         if self.data is None:
-            self.data = DataConfig()
+            self.data = DataRetrievalConfig()
         if self.strategy is None:
             self.strategy = StrategyConfig()
         if self.portfolio is None:

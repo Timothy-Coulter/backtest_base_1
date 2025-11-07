@@ -15,7 +15,7 @@ import pandas as pd
 from backtester.core.config import BacktesterConfig, get_config
 from backtester.core.logger import get_backtester_logger
 from backtester.core.performance import PerformanceAnalyzer
-from backtester.data.data_handler import DataHandler
+from backtester.data.data_retrieval import DataRetrieval
 from backtester.execution.broker import SimulatedBroker
 from backtester.execution.order import OrderSide, OrderType
 from backtester.portfolio.portfolio import DualPoolPortfolio
