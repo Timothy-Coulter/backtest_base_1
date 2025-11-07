@@ -48,13 +48,13 @@ class TestLargeDatasetPerformance:
         max_memory_usage = 1024  # Less than 1GB memory usage
 
         # Validate performance benchmarks
-        assert (
-            metrics['execution_time'] <= max_processing_time
-        ), f"Processing time {metrics['execution_time']:.2f}s exceeds limit {max_processing_time}s"
+        assert metrics['execution_time'] <= max_processing_time, (
+            f"Processing time {metrics['execution_time']:.2f}s exceeds limit {max_processing_time}s"
+        )
 
-        assert (
-            metrics['memory_used'] <= max_memory_usage
-        ), f"Memory usage {metrics['memory_used']:.2f}MB exceeds limit {max_memory_usage}MB"
+        assert metrics['memory_used'] <= max_memory_usage, (
+            f"Memory usage {metrics['memory_used']:.2f}MB exceeds limit {max_memory_usage}MB"
+        )
 
         # Validate that backtest completed successfully
         assert 'performance' in results, "Performance should be calculated"
@@ -129,9 +129,9 @@ class TestLargeDatasetPerformance:
             memory_ratio = memory_usage[i] / max(memory_usage[i - 1], 1)
 
             # Allow some overhead but not excessive growth
-            assert (
-                memory_ratio <= size_ratio * 2
-            ), f"Memory usage growing too fast: {memory_ratio:.2f}x vs size ratio {size_ratio:.2f}x"
+            assert memory_ratio <= size_ratio * 2, (
+                f"Memory usage growing too fast: {memory_ratio:.2f}x vs size ratio {size_ratio:.2f}x"
+            )
 
         print(f"Memory scalability: {[f'{mu:.1f}MB' for mu in memory_usage]}")
         print(f"Processing times: {[f'{pt:.2f}s' for pt in processing_times]}")
@@ -253,9 +253,9 @@ class TestHighFrequencyDataProcessing:
 
         # Performance benchmark: should process minute data in reasonable time
         max_expected_time = n_periods * 0.01  # 10ms per minute
-        assert (
-            processing_time <= max_expected_time
-        ), f"Minute data processing too slow: {processing_time:.2f}s for {n_periods} periods"
+        assert processing_time <= max_expected_time, (
+            f"Minute data processing too slow: {processing_time:.2f}s for {n_periods} periods"
+        )
 
         print(f"Minute-level processing: {n_periods} periods in {processing_time:.2f}s")
 
@@ -423,9 +423,9 @@ class TestConcurrentOperations:
         # Validate execution times
         for result in results:
             assert result['execution_time'] > 0, "Each backtest should take time"
-            assert isinstance(
-                result['return'], (int, float, type(None))
-            ), "Should return valid return value or None"
+            assert isinstance(result['return'], (int, float, type(None))), (
+                "Should return valid return value or None"
+            )
 
         print(f"Parallel execution: {len(results)} backtests in {total_time:.2f}s")
         print(f"Success rate: {len(successful_backtests)}/{len(results)}")
@@ -729,9 +729,9 @@ class TestSystemResourceUsage:
 
         # Memory usage should be reasonable for both approaches
         assert memory_after_chunks < 2000, "Chunk processing memory usage should be reasonable"
-        assert (
-            memory_after_incremental < 2000
-        ), "Incremental processing memory usage should be reasonable"
+        assert memory_after_incremental < 2000, (
+            "Incremental processing memory usage should be reasonable"
+        )
 
 
 # This will be resolved when the test runs with proper fixtures

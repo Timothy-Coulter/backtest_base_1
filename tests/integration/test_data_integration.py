@@ -41,24 +41,24 @@ class TestMarketDataIntegration:
 
                 # Validate required columns
                 required_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
-                assert all(
-                    col in data.columns for col in required_columns
-                ), "Data should have required OHLCV columns"
+                assert all(col in data.columns for col in required_columns), (
+                    "Data should have required OHLCV columns"
+                )
 
                 # Validate data types
                 numeric_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
                 for col in numeric_columns:
-                    assert pd.api.types.is_numeric_dtype(
-                        data[col]
-                    ), f"Column {col} should be numeric"
+                    assert pd.api.types.is_numeric_dtype(data[col]), (
+                        f"Column {col} should be numeric"
+                    )
 
                 # Validate data integrity
-                assert (
-                    (data['High'] >= data[['Open', 'Close']]).all().all()
-                ), "High should be >= Open and Close"
-                assert (
-                    (data['Low'] <= data[['Open', 'Close']]).all().all()
-                ), "Low should be <= Open and Close"
+                assert (data['High'] >= data[['Open', 'Close']]).all().all(), (
+                    "High should be >= Open and Close"
+                )
+                assert (data['Low'] <= data[['Open', 'Close']]).all().all(), (
+                    "Low should be <= Open and Close"
+                )
                 assert (data['Volume'] >= 0).all().all(), "Volume should be non-negative"
 
             except Exception as e:
