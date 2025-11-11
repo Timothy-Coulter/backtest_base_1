@@ -148,7 +148,7 @@ warn_required_dynamic_aliases = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--reruns=3 --reruns-delay=1"
+addopts = "--reruns=3 --reruns-delay=0.1"
 
 # =============================================================================
 # Coverage Configuration
