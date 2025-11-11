@@ -96,21 +96,35 @@ class ComprehensiveRiskConfig(BaseModel):
         """Initialize ComprehensiveRiskConfig with default configurations if not provided."""
         super().__init__(**data)
 
-        # Initialize default configurations if not provided
-        if self.stop_loss_config is None:
-            self.stop_loss_config = StopLossConfig()
-        if self.take_profit_config is None:
-            self.take_profit_config = TakeProfitConfig()
-        if self.position_sizing_config is None:
-            self.position_sizing_config = PositionSizingConfig()
-        if self.risk_limits_config is None:
-            self.risk_limits_config = RiskLimitConfig()
-        if self.risk_monitoring_config is None:
-            self.risk_monitoring_config = RiskMonitoringConfig()
+        # Track which configs were explicitly provided
+        self._explicit_configs = {
+            'stop_loss_config': 'stop_loss_config' in data,
+            'take_profit_config': 'take_profit_config' in data,
+            'position_sizing_config': 'position_sizing_config' in data,
+            'risk_limits_config': 'risk_limits_config' in data,
+            'risk_monitoring_config': 'risk_monitoring_config' in data,
+        }
+
+        # Initialize default configurations only if they were not explicitly provided
+        # in the input data AND are currently None
+        self._initialize_default_config('stop_loss_config', StopLossConfig)
+        self._initialize_default_config('take_profit_config', TakeProfitConfig)
+        self._initialize_default_config('position_sizing_config', PositionSizingConfig)
+        self._initialize_default_config('risk_limits_config', RiskLimitConfig)
+        self._initialize_default_config('risk_monitoring_config', RiskMonitoringConfig)
+
+    def _initialize_default_config(self, config_name: str, config_class: type) -> None:
+        """Initialize a default configuration if not explicitly provided."""
+        if not self._explicit_configs[config_name] and getattr(self, config_name) is None:
+            setattr(self, config_name, config_class())
 
     def get_effective_risk_limits(self) -> dict[str, float]:
         """Get effective risk limits from the risk limits configuration."""
-        if self.risk_limits_config:
+        # Check if risk_limits_config was explicitly provided (not auto-generated)
+        if (
+            self._explicit_configs.get('risk_limits_config', False)
+            and self.risk_limits_config is not None
+        ):
             return {
                 'max_drawdown': self.risk_limits_config.max_drawdown,
                 'max_leverage': self.risk_limits_config.max_leverage,
@@ -132,7 +146,11 @@ class ComprehensiveRiskConfig(BaseModel):
 
     def get_position_sizing_params(self) -> dict[str, Any]:
         """Get position sizing parameters."""
-        if self.position_sizing_config:
+        # Check if position_sizing_config was explicitly provided (not auto-generated)
+        if (
+            self._explicit_configs.get('position_sizing_config', False)
+            and self.position_sizing_config is not None
+        ):
             return {
                 'max_position_size': self.position_sizing_config.max_position_size,
                 'min_position_size': self.position_sizing_config.min_position_size,
@@ -154,7 +172,11 @@ class ComprehensiveRiskConfig(BaseModel):
 
     def get_stop_loss_params(self) -> dict[str, Any]:
         """Get stop loss parameters."""
-        if self.stop_loss_config:
+        # Check if stop_loss_config was explicitly provided (not auto-generated)
+        if (
+            self._explicit_configs.get('stop_loss_config', False)
+            and self.stop_loss_config is not None
+        ):
             return {
                 'stop_loss_type': self.stop_loss_config.stop_loss_type,
                 'stop_loss_value': self.stop_loss_config.stop_loss_value,
@@ -174,7 +196,11 @@ class ComprehensiveRiskConfig(BaseModel):
 
     def get_take_profit_params(self) -> dict[str, Any]:
         """Get take profit parameters."""
-        if self.take_profit_config:
+        # Check if take_profit_config was explicitly provided (not auto-generated)
+        if (
+            self._explicit_configs.get('take_profit_config', False)
+            and self.take_profit_config is not None
+        ):
             return {
                 'take_profit_type': self.take_profit_config.take_profit_type,
                 'take_profit_value': self.take_profit_config.take_profit_value,
@@ -194,7 +220,11 @@ class ComprehensiveRiskConfig(BaseModel):
 
     def get_monitoring_params(self) -> dict[str, Any]:
         """Get risk monitoring parameters."""
-        if self.risk_monitoring_config:
+        # Check if risk_monitoring_config was explicitly provided (not auto-generated)
+        if (
+            self._explicit_configs.get('risk_monitoring_config', False)
+            and self.risk_monitoring_config is not None
+        ):
             return {
                 'check_interval': self.risk_monitoring_config.check_interval,
                 'enable_real_time_alerts': self.risk_monitoring_config.enable_real_time_alerts,
@@ -211,7 +241,7 @@ class ComprehensiveRiskConfig(BaseModel):
             'check_interval': 60,
             'enable_real_time_alerts': True,
             'max_history_size': 500,
-            'volatility_threshold': self.volatility_threshold,
+            'volatility_threshold': self.volatility_threshold,  # Use ComprehensiveRiskConfig value
             'drawdown_threshold': 0.15,  # Default drawdown threshold
             'var_threshold': 0.06,  # Default VaR threshold
             'lookback_period': 252,

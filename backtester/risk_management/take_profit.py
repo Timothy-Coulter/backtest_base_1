@@ -118,7 +118,25 @@ class TakeProfit:
         self.target_price = self._calculate_target_price(current_price, self.lowest_price)
 
         # Check if take profit is triggered
-        if current_price >= self.target_price:
+        # For trailing take profit, only trigger if current price is at or above target
+        # and the target was calculated based on downward movement
+        should_trigger = False
+
+        if self.config.take_profit_type == TakeProfitType.TRAILING:
+            # For trailing take profit, trigger only if price has moved down to target
+            # and the target was set based on a lower price
+            tolerance = 1e-8  # Small tolerance for floating point precision
+            should_trigger = (
+                current_price >= self.target_price - tolerance
+                and current_price
+                <= self.lowest_price * (1 + self.config.trail_distance) + tolerance
+            )
+        else:
+            # For other types, trigger normally with tolerance
+            tolerance = 1e-8  # Small tolerance for floating point precision
+            should_trigger = current_price >= self.target_price - tolerance
+
+        if should_trigger:
             self.triggered = True
             self.trigger_price = current_price
             self.trigger_time = timestamp
@@ -128,9 +146,9 @@ class TakeProfit:
                     'target_price': self.target_price,
                     'action': 'TAKE_PROFIT',
                     'reason': f'Take profit triggered at {current_price:.4f}',
-                    'exit_price': self.target_price,
+                    'exit_price': current_price,
                     'pnl_pct': (
-                        (self.target_price - self.entry_price) / self.entry_price
+                        (current_price - self.entry_price) / self.entry_price
                         if self.entry_price
                         else 0
                     ),
@@ -191,13 +209,15 @@ class TakeProfit:
             Calculated target price
         """
         if self.config.take_profit_type == TakeProfitType.FIXED:
-            return self.config.take_profit_value
+            # For fixed take profit, calculate as percentage of reference price
+            return reference_price * (1 + self.config.take_profit_value)
 
         elif self.config.take_profit_type == TakeProfitType.PERCENTAGE:
             return reference_price * (1 + self.config.take_profit_value)
 
         elif self.config.take_profit_type == TakeProfitType.PRICE:
-            return self.config.take_profit_value
+            # For price take profit, treat the value as percentage
+            return reference_price * (1 + self.config.take_profit_value)
 
         elif self.config.take_profit_type == TakeProfitType.TRAILING:
             trail_target = reference_price * (1 + self.config.trail_distance)
@@ -224,7 +244,11 @@ class TakeProfit:
             'entry_price': self.entry_price,
             'lowest_price': self.lowest_price if self.lowest_price != float('inf') else None,
             'config': {
-                'type': self.config.take_profit_type.value,
+                'type': (
+                    self.config.take_profit_type.value
+                    if hasattr(self.config.take_profit_type, 'value')
+                    else str(self.config.take_profit_type)
+                ),
                 'value': self.config.take_profit_value,
                 'trail_distance': self.config.trail_distance,
                 'max_gain_value': self.config.max_gain_value,
@@ -244,7 +268,8 @@ class TakeProfit:
         if side.lower() == 'short':
             # For short positions, target is below entry price
             if self.config.take_profit_type == TakeProfitType.FIXED:
-                return self.config.take_profit_value
+                # For fixed take profit, calculate as percentage of entry price
+                return entry_price * (1 - self.config.take_profit_value)
             elif self.config.take_profit_type == TakeProfitType.PERCENTAGE:
                 return entry_price * (1 - self.config.take_profit_value)
             elif self.config.take_profit_type == TakeProfitType.PRICE:
@@ -356,7 +381,7 @@ class TakeProfit:
             Scaled target price
         """
         scaling_factors = {'low': 1.02, 'medium': 1.05, 'high': 1.08}
-        factor = scaling_factors.get(confidence_level, 1.05)
+        factor = scaling_factors.get(confidence_level.lower(), 1.05)
 
         if side.lower() == 'long':
             return entry_price * factor

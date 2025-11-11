@@ -19,6 +19,7 @@ from .performance import PerformanceAnalyzer
 __all__ = [
     'BacktestEngine',
     'BacktesterConfig',
+    'ComprehensiveRiskConfig',
     'DataRetrievalConfig',
     'StrategyConfig',
     'PortfolioConfig',

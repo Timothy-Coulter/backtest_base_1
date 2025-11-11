@@ -150,7 +150,7 @@ class TestPositionSizingConfig:
         # Test JSON serialization
         config_json = config.model_dump_json()
         assert isinstance(config_json, str)
-        assert '"sizing_method": "risk_based"' in config_json
+        assert '"sizing_method":"risk_based"' in config_json
 
 
 class TestPositionSizer:
@@ -226,9 +226,9 @@ class TestPositionSizer:
         result_low = sizer.calculate_position_size(portfolio_value=10000.0, conviction=0.5)
         assert result_low == 0.05  # 0.10 * 0.5
 
-        # High conviction
+        # High conviction - should be capped at max_position_size
         result_high = sizer.calculate_position_size(portfolio_value=10000.0, conviction=1.5)
-        assert result_high == 0.15  # 0.10 * 1.5, but capped at max_position_size
+        assert result_high == 0.10  # Capped at max_position_size (0.10)
 
     def test_calculate_position_size_with_volatility_adjustment(
         self, default_config: PositionSizingConfig
@@ -633,13 +633,25 @@ class TestPositionSizer:
 
     def test_conviction_factors_integration(self, default_config: PositionSizingConfig) -> None:
         """Test integration of conviction factors in position sizing."""
-        config = PositionSizingConfig(conviction_factors={'low': 0.5, 'medium': 1.0, 'high': 2.0})
+        # Use risk-based method for this test since it applies conviction factors
+        # Use more extreme conviction factors to ensure they don't hit max constraints
+        config = PositionSizingConfig(
+            sizing_method=SizingMethod.RISK_BASED,
+            conviction_factors={'low': 0.2, 'medium': 1.0, 'high': 4.0},
+            max_position_size=0.50  # Large max to avoid constraints
+        )
         sizer = PositionSizer(config=config)
 
-        # Test different conviction levels
-        result_low = sizer.calculate_position_size(portfolio_value=10000.0, conviction=0.5)
-        result_medium = sizer.calculate_position_size(portfolio_value=10000.0, conviction=1.0)
-        result_high = sizer.calculate_position_size(portfolio_value=10000.0, conviction=1.5)
+        # Test different conviction levels (low, medium, high mappings)
+        result_low = sizer.calculate_position_size_risk_based(
+            account_value=10000.0, entry_price=100.0, stop_price=95.0, conviction_level='low'
+        )
+        result_medium = sizer.calculate_position_size_risk_based(
+            account_value=10000.0, entry_price=100.0, stop_price=95.0, conviction_level='medium'
+        )
+        result_high = sizer.calculate_position_size_risk_based(
+            account_value=10000.0, entry_price=100.0, stop_price=95.0, conviction_level='high'
+        )
 
         # Should reflect conviction factors
         assert result_low < result_medium

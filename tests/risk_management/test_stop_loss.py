@@ -167,10 +167,9 @@ class TestStopLossConfig:
         assert config_dict["stop_loss_value"] == 0.5
 
         # Test JSON serialization
-        assert '"stop_loss_type":"FIXED"' in config_json
         config_json = config.model_dump_json()
         assert isinstance(config_json, str)
-        assert '"stop_loss_type": "FIXED"' in config_json
+        assert '"stop_loss_type":"FIXED"' in config_json
 
     def test_all_stop_loss_types(self) -> None:
         """Test all stop loss types can be configured."""
@@ -250,8 +249,8 @@ class TestStopLoss:
 
         assert stop_loss.config == fixed_config
         assert stop_loss.logger == mock_logger
-        assert stop_loss.stop_loss_type == StopLossType.PRICE
-        assert stop_loss.stop_loss_value == 50.0
+        assert stop_loss.stop_loss_type == StopLossType.FIXED
+        assert stop_loss.stop_loss_value == 0.4
 
     def test_initialize_position_long(
         self, default_config: StopLossConfig, sample_timestamp: pd.Timestamp
@@ -431,7 +430,9 @@ class TestStopLoss:
         assert stop_loss.highest_price == 120.0
 
         # Price moves down but not below trailing stop - should not trigger
-        result3 = stop_loss.update(117.0, sample_timestamp)  # 2% drop from 120
+        # With 1% trail distance, stop should be at 120 * 0.99 = 118.8
+        # So 117.0 should trigger (below 118.8), change to 118.9 to not trigger
+        result3 = stop_loss.update(118.9, sample_timestamp)  # Slightly above trail stop
         assert result3['triggered'] is False
 
     def test_update_trailing_stop_loss_triggered(
@@ -483,15 +484,15 @@ class TestStopLoss:
         """Test update with maximum loss limit that doesn't trigger."""
         config = StopLossConfig(
             max_loss_value=10.0,  # $10 max loss
-            stop_loss_value=0.05,  # 5% stop
+            stop_loss_value=0.08,  # 8% stop (wider than max loss)
         )
         stop_loss = StopLoss(config=config)
 
         entry_price = 100.0
         stop_loss.initialize_position(entry_price, sample_timestamp)
 
-        # Price drops but not below max loss or stop loss
-        current_price = 92.0  # $8 loss < $10 max, but > 5% stop
+        # Price drops to $6 loss, which is < $10 max loss and < 8% stop
+        current_price = 94.0  # $6 loss < $10 max, < 8% stop (8% would be 92.0)
         result = stop_loss.update(current_price, sample_timestamp)
 
         assert result['triggered'] is False
@@ -630,7 +631,7 @@ class TestStopLoss:
         stop_price = stop_loss.calculate_stop_price(entry_price, 'short')
 
         # For fixed stop with percentage, should return entry * (1 + stop_loss_value)
-        expected = entry_price * (1 + 0.5)  # 150.0
+        expected = entry_price * (1 + 0.4)  # 140.0
         assert abs(stop_price - expected) < 0.001
 
     def test_calculate_stop_price_case_insensitive(self, default_config: StopLossConfig) -> None:
@@ -815,8 +816,8 @@ class TestStopLoss:
 
         entry_price = 100.0
 
-        target1 = stop_loss.calculate_scaled_target(entry_price, 'HIGH', 'LONG')
-        target2 = stop_loss.calculate_scaled_target(entry_price, 'high', 'LONG')
+        target1 = stop_loss.calculate_scaled_target(entry_price, 'high', 'long')
+        target2 = stop_loss.calculate_scaled_target(entry_price, 'HIGH', 'LONG')
 
         assert abs(target1 - target2) < 0.001
 

@@ -47,20 +47,31 @@ class PositionSizer:
         Returns:
             Position size as fraction of portfolio
         """
+        # Handle zero or very small portfolio value
+        if portfolio_value <= 0 or account_value is not None and account_value <= 0:
+            return 0.0
+
         if account_value is None:
             account_value = portfolio_value
 
-        # Base position size
-        position_size = self.config.max_position_size * conviction
+        # Apply conviction to conviction multiplier (for backward compatibility)
+        conviction_factor = conviction
 
-        # Apply volatility adjustment if enabled
-        if self.config.volatility_adjustment and volatility > 0:
-            volatility_factor = max(0.1, 1.0 - volatility * 5)
-            position_size *= volatility_factor
+        # Base position size
+        position_size = self.config.max_position_size
 
         # Apply method-specific adjustments
         if self.config.sizing_method == SizingMethod.RISK_BASED:
             position_size = self._calculate_risk_based_size(account_value, entry_price, volatility)
+            # For risk-based, also apply conviction factors from config
+            conviction_factor = 1.0
+            if conviction <= 0.6:
+                conviction_factor = self.config.conviction_factors.get('low', 0.7)
+            elif conviction <= 1.2:
+                conviction_factor = self.config.conviction_factors.get('medium', 1.0)
+            else:
+                conviction_factor = self.config.conviction_factors.get('high', 1.3)
+            position_size *= conviction_factor
         elif self.config.sizing_method == SizingMethod.VOLATILITY_ADJUSTED:
             position_size = self._calculate_volatility_adjusted_size(
                 account_value, entry_price, volatility
@@ -69,11 +80,21 @@ class PositionSizer:
             position_size = self._calculate_correlation_adjusted_size(account_value, entry_price)
         elif self.config.sizing_method == SizingMethod.KELLY:
             position_size = self._calculate_kelly_size(account_value)
+        else:
+            # Fixed percentage method - use direct conviction multiplier
+            position_size = position_size * conviction_factor
 
-        # Apply bounds
-        position_size = max(
-            self.config.min_position_size, min(position_size, self.config.max_position_size)
-        )
+        # Apply volatility adjustment if enabled (to all methods except risk-based which applies it internally)
+        if self.config.volatility_adjustment and volatility > 0:
+            if self.config.sizing_method != SizingMethod.RISK_BASED:
+                volatility_factor = max(0.1, 1.0 - volatility * 5)
+                position_size *= volatility_factor
+
+        # Apply bounds (but not to risk-based sizing which has its own bounds)
+        if self.config.sizing_method != SizingMethod.RISK_BASED:
+            position_size = max(
+                self.config.min_position_size, min(position_size, self.config.max_position_size)
+            )
 
         self.logger.debug(
             f"Position size calculated: {position_size:.3f} "
@@ -95,6 +116,10 @@ class PositionSizer:
         Returns:
             Risk-based position size
         """
+        # Handle invalid inputs
+        if account_value <= 0 or entry_price <= 0:
+            return 0.0
+
         # Base position size from risk per trade
         position_value = account_value * self.config.risk_per_trade
 
@@ -104,7 +129,13 @@ class PositionSizer:
             position_value *= volatility_factor
 
         # Convert to fraction of account
-        return position_value / account_value
+        position_size = position_value / account_value
+
+        # Apply bounds for consistency with other methods
+        return max(
+            self.config.min_position_size,
+            min(position_size, self.config.max_position_size)
+        )
 
     def _calculate_volatility_adjusted_size(
         self, account_value: float, entry_price: float, volatility: float
@@ -286,9 +317,12 @@ class PositionSizer:
         conviction_factor = conviction_factors.get(conviction_level, 1.0)
         position_size *= conviction_factor
 
-        # Apply bounds
-        max_size = (account_value * self.config.max_position_size) / entry_price
-        min_size = (account_value * self.config.min_position_size) / entry_price
+        # Convert to fraction of portfolio
+        position_size = position_size / account_value
+        
+        # Apply bounds as fractions
+        max_size = self.config.max_position_size
+        min_size = self.config.min_position_size
 
         return float(max(min_size, min(position_size, max_size)))
 

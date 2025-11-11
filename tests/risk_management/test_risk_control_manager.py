@@ -6,6 +6,7 @@ and all edge cases.
 """
 
 import logging
+from typing import Any
 from unittest.mock import Mock
 
 import pandas as pd
@@ -153,14 +154,14 @@ class TestComprehensiveRiskConfig:
     def test_get_stop_loss_params_with_config(self) -> None:
         """Test get_stop_loss_params with stop loss config."""
         stop_loss_config = StopLossConfig(
-            stop_loss_type='TRAILING',
+            stop_loss_type="TRAILING",
             stop_loss_value=0.025,
         )
         config = ComprehensiveRiskConfig(stop_loss_config=stop_loss_config)
 
         params = config.get_stop_loss_params()
 
-        assert params['stop_loss_type'] == 'TRAILING'
+        assert params['stop_loss_type'] == "TRAILING"
         assert params['stop_loss_value'] == 0.025
         assert 'trail_distance' in params
         assert 'trail_step' in params
@@ -171,7 +172,7 @@ class TestComprehensiveRiskConfig:
 
         params = config.get_stop_loss_params()
 
-        assert params['stop_loss_type'] == 'PERCENTAGE'
+        assert params['stop_loss_type'] == "PERCENTAGE"
         assert params['stop_loss_value'] == 0.025
         assert 'trail_distance' in params
         assert 'trail_step' in params
@@ -179,14 +180,14 @@ class TestComprehensiveRiskConfig:
     def test_get_take_profit_params_with_config(self) -> None:
         """Test get_take_profit_params with take profit config."""
         take_profit_config = TakeProfitConfig(
-            take_profit_type='FIXED',
+            take_profit_type="FIXED",
             take_profit_value=0.08,
         )
         config = ComprehensiveRiskConfig(take_profit_config=take_profit_config)
 
         params = config.get_take_profit_params()
 
-        assert params['take_profit_type'] == 'FIXED'
+        assert params['take_profit_type'] == "FIXED"
         assert params['take_profit_value'] == 0.08
         assert 'trail_distance' in params
         assert 'trail_step' in params
@@ -197,7 +198,7 @@ class TestComprehensiveRiskConfig:
 
         params = config.get_take_profit_params()
 
-        assert params['take_profit_type'] == 'PERCENTAGE'
+        assert params['take_profit_type'] == "PERCENTAGE"
         assert params['take_profit_value'] == 0.08
         assert 'trail_distance' in params
         assert 'trail_step' in params
@@ -425,7 +426,7 @@ class TestRiskControlManager:
         manager = RiskControlManager(config=default_config)
 
         portfolio_value = 100000.0
-        positions = {}
+        positions: dict[str, Any] = {}
 
         result = manager.check_portfolio_risk(portfolio_value, positions)
 
@@ -460,10 +461,21 @@ class TestRiskControlManager:
     ) -> None:
         """Test check_portfolio_risk with leverage violation."""
         manager = RiskControlManager(config=default_config)
-        manager.current_leverage = 8.0  # Exceeds max_leverage of 5.0
+        # Set a low leverage value to test the violation
+        manager.config.max_leverage = 2.0
 
         portfolio_value = 100000.0
-        positions = {}
+        # Create positions that exceed leverage (600k exposure / 100k portfolio = 6x > 2x max)
+        positions: dict[str, Any] = {
+            "AAPL": {
+                'market_value': 300000.0,  # 3x leverage
+                'active': True,
+            },
+            "MSFT": {
+                'market_value': 300000.0,  # 3x leverage
+                'active': True,
+            }
+        }
 
         result = manager.check_portfolio_risk(portfolio_value, positions)
 
@@ -556,7 +568,7 @@ class TestRiskControlManager:
         """Test update_risk_limits."""
         manager = RiskControlManager(config=default_config)
 
-        positions = {"AAPL": {'symbol': 'AAPL'}}
+        positions: dict[str, Any] = {"AAPL": {'symbol': 'AAPL'}}
         sector_mapping = {"AAPL": "Technology"}
 
         # Should not raise an error even if risk_limits is None or mocked
@@ -568,7 +580,7 @@ class TestRiskControlManager:
         """Test update_risk_limits with minimal config."""
         manager = RiskControlManager(config=minimal_config)
 
-        positions = {"AAPL": {'symbol': 'AAPL'}}
+        positions: dict[str, Any] = {"AAPL": {'symbol': 'AAPL'}}
 
         # Should handle None risk_limits gracefully
         manager.update_risk_limits(positions)

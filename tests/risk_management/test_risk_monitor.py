@@ -65,7 +65,7 @@ class TestRiskMonitoringConfig:
         assert config.check_interval == 10
 
         # Invalid values should raise ValidationError
-        with pytest.raises(Exception):  # ValidationError from pydantic
+        with pytest.raises(ValueError):  # ValidationError from pydantic
             RiskMonitoringConfig(check_interval=0)  # Below minimum
 
     def test_config_validation_thresholds(self) -> None:
@@ -902,7 +902,7 @@ class TestRiskMonitor:
             }
 
             # Process update
-            alert = monitor.process_portfolio_update(portfolio_state)
+            monitor.process_portfolio_update(portfolio_state)
 
             # Manually record risk measurement to ensure it's tracked
             monitor.record_risk_measurement(
@@ -950,7 +950,7 @@ class TestRiskMonitor:
         assert alert["alert_type"] == "risk_metric_breach"
 
         # Test dashboard data includes alerts
-        dashboard = monitor.generate_dashboard_data()
+        monitor.generate_dashboard_data()
         # Note: current implementation shows empty alerts list in dashboard
         # but the process_portfolio_update method should have generated one
 

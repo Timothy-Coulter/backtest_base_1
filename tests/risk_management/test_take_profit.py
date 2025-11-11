@@ -645,8 +645,9 @@ class TestTakeProfit:
         entry_price = 100.0
         target_price = take_profit.calculate_target_price(entry_price, 'short')
 
-        # For fixed take profit, should return fixed price
-        assert abs(target_price - 110.0) < 0.001
+        # For fixed take profit with entry=100 and take_profit_value=0.10 (10%),
+        # short target should be entry * (1 - take_profit_value) = 100 * 0.9 = 90.0
+        assert abs(target_price - 90.0) < 0.001
 
     def test_calculate_target_price_case_insensitive(
         self, percentage_config: TakeProfitConfig

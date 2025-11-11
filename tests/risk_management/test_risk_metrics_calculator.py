@@ -5,6 +5,7 @@ VaR, Expected Shortfall, drawdown, volatility, performance metrics, and stress t
 """
 
 import logging
+from typing import Any
 from unittest.mock import Mock
 
 import numpy as np
@@ -853,7 +854,7 @@ class TestStressTestScenarios:
         calculator = RiskMetricsCalculator()
 
         portfolio_returns = pd.Series(np.random.normal(0, 0.02, 100))
-        empty_scenarios = {}
+        empty_scenarios: dict[str, Any] = {}
 
         stress_results = calculator.calculate_stress_test_scenarios(
             portfolio_returns, empty_scenarios

@@ -4,7 +4,7 @@ This module provides a centralized configuration system that can be used
 globally throughout the backtesting framework.
 """
 
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 

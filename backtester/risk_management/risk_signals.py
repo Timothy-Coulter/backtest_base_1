@@ -56,30 +56,60 @@ class RiskMetric:
     def is_within_threshold(self) -> bool:
         """Check if metric is within acceptable threshold."""
         if self.unit == 'percentage':
-            return self.value <= self.threshold
-        else:
+            # For percentage metrics, check if the absolute value is within threshold
+            # This handles both positive (VaR) and negative (drawdown) values
             return abs(self.value) <= abs(self.threshold)
+        else:
+            return self.value <= self.threshold
 
     def __lt__(self, other: 'RiskMetric') -> bool:
-        """For percentage metrics, less negative is better."""
-        if self.unit == 'percentage' and other.unit == 'percentage':
-            return self.value > other.value  # Less negative is "less than"
-        return self.value < other.value
+        """Less than comparison for RiskMetric.
 
-    def __gt__(self, other: 'RiskMetric') -> bool:
-        """Greater than comparison for RiskMetric.
-
-        For percentage thresholds, more negative values are considered "greater than"
-        because they represent higher risk limits.
+        For percentage metrics, the comparison depends on the metric type:
+        - VaR metrics: lower values are "less than" higher values (less risk)
+        - Drawdown metrics: more negative values are "less than" less negative values (more risk)
 
         Args:
             other: Another RiskMetric to compare with
 
         Returns:
-            bool: True if this threshold is greater than other
+            bool: True if this metric is "less than" other
         """
         if self.unit == 'percentage' and other.unit == 'percentage':
-            return self.value < other.value  # More negative is "greater than"
+            # Check if this is a VaR-type metric (positive values, lower is better)
+            if 'var' in self.name.lower() and 'var' in other.name.lower():
+                return self.value < other.value  # Normal comparison for VaR
+            # For drawdown and other negative metrics, more negative is "less than"
+            else:
+                return self.value > other.value  # More negative is "less than" (worse)
+        # For mixed units, prevent meaningless comparisons by returning False
+        if self.unit != other.unit:
+            return False
+        return self.value < other.value
+
+    def __gt__(self, other: 'RiskMetric') -> bool:
+        """Greater than comparison for RiskMetric.
+
+        For percentage metrics, the comparison depends on the metric type:
+        - VaR metrics: higher values are "greater than" lower values (more risk)
+        - Drawdown metrics: less negative values are "greater than" more negative values (less risk)
+
+        Args:
+            other: Another RiskMetric to compare with
+
+        Returns:
+            bool: True if this metric is "greater than" other
+        """
+        if self.unit == 'percentage' and other.unit == 'percentage':
+            # Check if this is a VaR-type metric (positive values, lower is better)
+            if 'var' in self.name.lower() and 'var' in other.name.lower():
+                return self.value > other.value  # Normal comparison for VaR
+            # For drawdown and other negative metrics, less negative is "greater than"
+            else:
+                return self.value < other.value  # Less negative is "greater than" (better)
+        # For mixed units, prevent meaningless comparisons by returning False
+        if self.unit != other.unit:
+            return False
         return self.value > other.value
 
 
@@ -105,7 +135,11 @@ class RiskLimit:
         if not self.is_active:
             return False
 
-        if self.limit_type in ['position_size', 'leverage', 'drawdown']:
+        if self.limit_type in ['position_size', 'leverage']:
+            return current_value > self.threshold
+        elif self.limit_type == 'drawdown':
+            # For drawdown, more negative values are better (less loss)
+            # So we breach when current_value is less negative than threshold
             return current_value > self.threshold
         elif self.limit_type in ['var', 'cvar']:
             return abs(current_value) > abs(self.threshold)
