@@ -27,7 +27,7 @@ class CacheUtils:
             max_memory_items: Maximum number of items to keep in memory cache
         """
         self.memory_cache = memory_cache
-        self.cache_dir = cache_dir or tempfile.gettempdir()
+        self.cache_dir: str | None = cache_dir or tempfile.gettempdir()
         self.max_memory_items = max_memory_items
 
         # Memory cache storage
@@ -41,7 +41,11 @@ class CacheUtils:
 
         # Ensure cache directory exists
         if self.cache_dir:
-            os.makedirs(self.cache_dir, exist_ok=True)
+            try:
+                os.makedirs(self.cache_dir, exist_ok=True)
+            except OSError:
+                # Fallback to in-memory cache only when file system operations fail.
+                self.cache_dir = None
 
     def _get_cache_key(self, key: str) -> str:
         """Generate cache key from input key."""
@@ -49,6 +53,9 @@ class CacheUtils:
 
     def _get_cache_file_path(self, cache_key: str) -> str:
         """Get file path for cache key."""
+        if self.cache_dir is None:
+            msg = "File-based caching is disabled; no cache directory available"
+            raise RuntimeError(msg)
         return os.path.join(self.cache_dir, f"cache_{cache_key}.pkl")
 
     def set(self, key: str, value: Any, ttl: float | None = None) -> None:

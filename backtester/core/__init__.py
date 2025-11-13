@@ -1,4 +1,4 @@
-"""Core layer for backtest engine, performance metrics, configuration, and logging."""
+"""Core layer for backtest engine, performance metrics, configuration, logging, and event system."""
 
 from backtester.core.backtest_engine import BacktestEngine
 from backtester.core.config import (
@@ -13,10 +13,49 @@ from backtester.core.config import (
     reset_config,
     set_config,
 )
+
+# Event system imports
+from backtester.core.event_bus import Event, EventBus, EventFilter, EventPriority
+from backtester.core.event_handlers import (
+    CompositeEventHandler,
+    EventHandler,
+    MarketDataHandler,
+    OrderHandler,
+    PortfolioHandler,
+    RiskHandler,
+    SignalHandler,
+    StrategyHandler,
+    create_event_handler,
+)
+from backtester.core.events import (
+    BacktestEvent,
+    DataUpdateEvent,
+    MarketDataEvent,
+    MarketDataType,
+    OrderEvent,
+    OrderSide,
+    OrderStatus,
+    OrderType,
+    PerformanceEvent,
+    PortfolioUpdateEvent,
+    RiskAlertEvent,
+    RiskLevel,
+    SignalEvent,
+    SignalType,
+    StrategyEvent,
+    StrategyEventType,
+    create_market_data_event,
+    create_order_event,
+    create_portfolio_update_event,
+    create_risk_alert_event,
+    create_signal_event,
+    create_strategy_event,
+)
 from backtester.core.logger import get_backtester_logger
 from backtester.core.performance import PerformanceAnalyzer
 
 __all__ = [
+    # Core components
     'BacktestEngine',
     'BacktesterConfig',
     'ComprehensiveRiskConfig',
@@ -33,4 +72,43 @@ __all__ = [
     'reset_config',
     'get_backtester_logger',
     'PerformanceAnalyzer',
+    # Event system
+    'EventBus',
+    'Event',
+    'EventFilter',
+    'EventPriority',
+    # Event types
+    'MarketDataEvent',
+    'SignalEvent',
+    'OrderEvent',
+    'PortfolioUpdateEvent',
+    'RiskAlertEvent',
+    'StrategyEvent',
+    'BacktestEvent',
+    'DataUpdateEvent',
+    'PerformanceEvent',
+    'MarketDataType',
+    'SignalType',
+    'OrderType',
+    'OrderSide',
+    'OrderStatus',
+    'RiskLevel',
+    'StrategyEventType',
+    # Event factories
+    'create_market_data_event',
+    'create_signal_event',
+    'create_order_event',
+    'create_portfolio_update_event',
+    'create_risk_alert_event',
+    'create_strategy_event',
+    # Event handlers
+    'EventHandler',
+    'MarketDataHandler',
+    'SignalHandler',
+    'OrderHandler',
+    'PortfolioHandler',
+    'RiskHandler',
+    'StrategyHandler',
+    'CompositeEventHandler',
+    'create_event_handler',
 ]

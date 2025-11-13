@@ -4,6 +4,8 @@ This module provides standardized configuration classes for all technical indica
 following the established pydantic patterns from the core configuration system.
 """
 
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
@@ -29,6 +31,7 @@ class IndicatorConfig(BaseModel):
     long_period: int = Field(default=20, description="Long period for dual MA indicators")
     ma_type: str = Field(default="simple", description="MA type: simple, exponential, weighted")
     price_column: str = Field(default="close", description="Price column to use for calculations")
+    parameters: dict[str, Any] = Field(default_factory=dict, description="Additional parameters")
 
     # Oscillator Indicators
     overbought_threshold: float = Field(default=70.0, description="Overbought level")
@@ -65,14 +68,23 @@ class IndicatorConfig(BaseModel):
     # Volume specific parameters
     volume_column: str = Field(default="volume", description="Volume column name")
 
-    @field_validator('indicator_type')
+    @field_validator('indicator_name')
+    @classmethod
+    def validate_indicator_name(cls, v: str) -> str:
+        """Ensure indicator name is a non-empty string."""
+        if not isinstance(v, str) or not v.strip():
+            raise ValueError("indicator_name must be a non-empty string")
+        return v.strip()
+
+    @field_validator('indicator_type', mode='before')
     @classmethod
     def validate_indicator_type(cls, v: str) -> str:
         """Validate indicator type is one of the allowed values."""
         valid_types = ['trend', 'momentum', 'volume', 'volatility', 'oscillator']
-        if v not in valid_types:
+        value = v.lower().strip()
+        if value not in valid_types:
             raise ValueError(f"indicator_type must be one of {valid_types}")
-        return v
+        return value
 
     @field_validator('ma_type')
     @classmethod

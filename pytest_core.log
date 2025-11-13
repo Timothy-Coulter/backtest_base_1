@@ -1,0 +1,74 @@
+Downloading pydantic-core (2.0MiB)
+ Downloading pydantic-core
+Installed 26 packages in 152ms
+============================= test session starts ==============================
+platform linux -- Python 3.10.19, pytest-9.0.1, pluggy-1.6.0
+rootdir: /mnt/c/repos/backtest_base_1
+configfile: pyproject.toml
+plugins: rerunfailures-16.1
+collected 65 items / 3 errors / 1 skipped
+
+==================================== ERRORS ====================================
+________________ ERROR collecting tests/core/test_event_bus.py _________________
+ImportError while importing test module '/mnt/c/repos/backtest_base_1/tests/core/test_event_bus.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/home/timco/.local/share/uv/python/cpython-3.10.19-linux-x86_64-gnu/lib/python3.10/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+tests/core/test_event_bus.py:7: in <module>
+    from backtester.core.event_bus import Event, EventBus, EventFilter, EventPriority
+backtester/__init__.py:8: in <module>
+    from backtester.core.backtest_engine import BacktestEngine
+backtester/core/__init__.py:3: in <module>
+    from backtester.core.backtest_engine import BacktestEngine
+backtester/core/backtest_engine.py:18: in <module>
+    from backtester.data.data_retrieval import DataRetrieval
+backtester/data/__init__.py:3: in <module>
+    from backtester.data.data_retrieval import DataRetrieval
+backtester/data/data_retrieval.py:8: in <module>
+    from findatapy.market import Market, MarketDataGenerator, MarketDataRequest
+E   ModuleNotFoundError: No module named 'findatapy'
+______________ ERROR collecting tests/core/test_event_handlers.py ______________
+ImportError while importing test module '/mnt/c/repos/backtest_base_1/tests/core/test_event_handlers.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/home/timco/.local/share/uv/python/cpython-3.10.19-linux-x86_64-gnu/lib/python3.10/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+tests/core/test_event_handlers.py:8: in <module>
+    from backtester.core.event_bus import Event
+backtester/__init__.py:8: in <module>
+    from backtester.core.backtest_engine import BacktestEngine
+backtester/core/__init__.py:3: in <module>
+    from backtester.core.backtest_engine import BacktestEngine
+backtester/core/backtest_engine.py:18: in <module>
+    from backtester.data.data_retrieval import DataRetrieval
+backtester/data/__init__.py:3: in <module>
+    from backtester.data.data_retrieval import DataRetrieval
+backtester/data/data_retrieval.py:8: in <module>
+    from findatapy.market import Market, MarketDataGenerator, MarketDataRequest
+E   ModuleNotFoundError: No module named 'findatapy'
+__________________ ERROR collecting tests/core/test_events.py __________________
+ImportError while importing test module '/mnt/c/repos/backtest_base_1/tests/core/test_events.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/home/timco/.local/share/uv/python/cpython-3.10.19-linux-x86_64-gnu/lib/python3.10/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+tests/core/test_events.py:7: in <module>
+    from backtester.core.events import (
+backtester/__init__.py:8: in <module>
+    from backtester.core.backtest_engine import BacktestEngine
+backtester/core/__init__.py:3: in <module>
+    from backtester.core.backtest_engine import BacktestEngine
+backtester/core/backtest_engine.py:18: in <module>
+    from backtester.data.data_retrieval import DataRetrieval
+backtester/data/__init__.py:3: in <module>
+    from backtester.data.data_retrieval import DataRetrieval
+backtester/data/data_retrieval.py:8: in <module>
+    from findatapy.market import Market, MarketDataGenerator, MarketDataRequest
+E   ModuleNotFoundError: No module named 'findatapy'
+=========================== short test summary info ============================
+ERROR tests/core/test_event_bus.py
+ERROR tests/core/test_event_handlers.py
+ERROR tests/core/test_events.py
+!!!!!!!!!!!!!!!!!!! Interrupted: 3 errors during collection !!!!!!!!!!!!!!!!!!!!
+========================= 1 skipped, 3 errors in 2.43s =========================

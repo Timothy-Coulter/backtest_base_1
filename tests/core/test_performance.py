@@ -8,18 +8,14 @@ import numpy as np
 import pandas as pd
 import pytest
 
-# Import the modules being tested
-try:
-    from backtester.core.performance import (
-        DrawdownAnalyzer,
-        PerformanceCalculator,
-        PerformanceMetrics,
-        ReturnAnalyzer,
-        RiskMetrics,
-        SharpeCalculator,
-    )
-except ImportError as e:
-    pytest.skip(f"Could not import backtester modules: {e}", allow_module_level=True)
+from backtester.core.performance import (
+    DrawdownAnalyzer,
+    PerformanceCalculator,
+    PerformanceMetrics,
+    ReturnAnalyzer,
+    RiskMetrics,
+    SharpeCalculator,
+)
 
 
 class TestPerformanceCalculator:
