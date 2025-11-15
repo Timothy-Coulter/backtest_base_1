@@ -5,6 +5,7 @@ position sizing based on the Kelly formula to maximize long-term growth.
 """
 
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 import numpy as np
@@ -37,9 +38,23 @@ class KellyCriterionStrategy(BasePortfolioStrategy):
         # Strategy-specific parameters
         self.lookback_period = config.optimization_params.lookback_period
         self.risk_free_rate = config.optimization_params.risk_free_rate
-        self.kelly_fraction = config.risk_parameters.get('kelly_fraction', 0.25)
-        self.min_win_rate = config.risk_parameters.get('min_win_rate', 0.01)
-        self.max_position_size = config.risk_parameters.get('max_position_size', 0.3)
+        risk_parameters = config.risk_parameters
+
+        def _risk_value(field: str, default: float) -> float:
+            source = risk_parameters
+            if source is None:
+                return default
+            if isinstance(source, Mapping):
+                value = source.get(field, default)
+            else:
+                value = getattr(source, field, default)
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return default
+
+        self.kelly_fraction = _risk_value('kelly_fraction', 0.25)
+        self.min_win_rate = _risk_value('min_win_rate', 0.01)
         self.enable_rebalancing = config.enable_rebalancing
         self.min_position_size = config.min_position_size
         self.max_position_size = config.max_position_size

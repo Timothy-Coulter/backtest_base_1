@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import types
+from collections import defaultdict
 from contextlib import ExitStack
-from dataclasses import dataclass, field
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pandas as pd
 import pytest
@@ -14,10 +14,10 @@ import pytest
 from backtester.core.backtest_engine import BacktestEngine
 from backtester.core.config import BacktesterConfig
 from backtester.core.event_bus import EventFilter
-from backtester.core.events import SignalEvent, create_portfolio_update_event
 from backtester.strategy.orchestration import StrategyKind
 from backtester.strategy.signal.base_signal_strategy import BaseSignalStrategy
 from backtester.strategy.signal.momentum_strategy import MomentumStrategy
+from tests.integration.stubs import capture_processed_signals, install_engine_stubs
 
 
 def _sample_market_data(rows: int = 5) -> pd.DataFrame:
@@ -33,170 +33,6 @@ def _sample_market_data(rows: int = 5) -> pd.DataFrame:
     return pd.DataFrame(data, index=index)
 
 
-@dataclass
-class StubPortfolio:
-    """Minimal portfolio stub that tracks portfolio values."""
-
-    portfolio_values: list[float] = field(default_factory=list)
-    initial_capital: float = 100.0
-    trade_log: list[dict[str, float]] = field(default_factory=list)
-    commission_rate: float = 0.0
-    max_positions: int | None = None
-    before_run_calls: int = 0
-    after_run_calls: int = 0
-    before_tick_calls: int = 0
-    after_tick_calls: int = 0
-
-    def reset(self) -> None:
-        """Reset accrued trade history and valuation."""
-        self.portfolio_values.clear()
-        self.trade_log.clear()
-
-    @property
-    def total_value(self) -> float:
-        """Return the latest portfolio valuation."""
-        if self.portfolio_values:
-            return self.portfolio_values[-1]
-        return self.initial_capital
-
-    def before_run(self, metadata: dict[str, Any] | None = None) -> None:
-        """Lifecycle hook before the simulation."""
-        self.before_run_calls += 1
-
-    def after_run(self, metadata: dict[str, Any] | None = None) -> None:
-        """Lifecycle hook after the simulation."""
-        self.after_run_calls += 1
-
-    def before_tick(self, context: dict[str, Any]) -> None:
-        """Lifecycle hook before each tick."""
-        self.before_tick_calls += 1
-
-    def after_tick(self, context: dict[str, Any], results: dict[str, Any]) -> None:
-        """Lifecycle hook after each tick."""
-        self.after_tick_calls += 1
-
-
-class StubBroker:
-    """Simulated broker capturing orders without external effects."""
-
-    def __init__(self) -> None:
-        """Initialise the broker stub with empty state."""
-        self.positions: dict[str, float] = {}
-        self.order_manager = MagicMock()
-        self.before_run_calls = 0
-        self.after_run_calls = 0
-        self.before_tick_calls = 0
-        self.after_tick_calls = 0
-
-    def execute_order(self, order: MagicMock) -> None:
-        """Mark an order as executed."""
-        order.is_active = False
-
-    def reset(self) -> None:
-        """Reset broker positions."""
-        self.positions.clear()
-
-    def before_run(self, metadata: dict[str, Any] | None = None) -> None:
-        """Lifecycle hook before the simulation."""
-        self.before_run_calls += 1
-
-    def after_run(self, metadata: dict[str, Any] | None = None) -> None:
-        """Lifecycle hook after the simulation."""
-        self.after_run_calls += 1
-
-    def before_tick(self, context: dict[str, Any]) -> None:
-        """Lifecycle hook before each tick."""
-        self.before_tick_calls += 1
-
-    def after_tick(self, context: dict[str, Any], results: dict[str, Any]) -> None:
-        """Lifecycle hook after each tick."""
-        self.after_tick_calls += 1
-
-
-class StubRiskManager:
-    """Basic risk manager stub reporting low risk."""
-
-    def check_portfolio_risk(self, value: float, positions: dict[str, float]) -> dict[str, object]:
-        """Always return a low-risk assessment for the test."""
-        return {"risk_level": "LOW", "violations": []}
-
-    def add_risk_signal(self, signal: dict[str, object]) -> None:  # noqa: D401
-        """No-op risk signal recorder for the stub."""
-
-    def reset(self) -> None:  # noqa: D401
-        """No state to reset for the stub."""
-
-
-def _install_stubs(
-    engine: BacktestEngine,
-    stub_portfolio: StubPortfolio,
-    stub_broker: StubBroker,
-    stub_risk: StubRiskManager,
-    processed_signals: list[list[dict[str, object]]],
-) -> None:
-    """Attach stubbed components and signal capture callbacks to the engine."""
-
-    def fake_create_portfolio(
-        self: Any, portfolio_params: dict[str, object] | None = None
-    ) -> StubPortfolio:
-        """Return the prepared stub portfolio."""
-        self.current_portfolio = stub_portfolio
-        return stub_portfolio
-
-    def fake_create_broker(self: Any) -> StubBroker:
-        """Return the prepared stub broker."""
-        self.current_broker = stub_broker
-        return stub_broker
-
-    def fake_create_risk_manager(self: Any) -> StubRiskManager:
-        """Return the prepared stub risk manager."""
-        self.current_risk_manager = stub_risk
-        return stub_risk
-
-    def fake_process(
-        self: BacktestEngine,
-        signals: list[dict[str, object]],
-        current_price: float,
-        day_high: float,
-        day_low: float,
-        timestamp: object,
-        symbol: str,
-        historical_data: pd.DataFrame,
-        *,
-        allow_execution: bool = True,
-    ) -> dict[str, float]:
-        """Record processed signals and update stub portfolio values."""
-        processed_signals.append(signals)
-        next_value = 100.0 + len(processed_signals)
-        stub_portfolio.portfolio_values.append(next_value)
-        portfolio_event = create_portfolio_update_event(
-            portfolio_id="stub_portfolio",
-            total_value=next_value,
-            cash_balance=stub_portfolio.initial_capital,
-            positions_value=0.0,
-            source="stub_portfolio",
-            metadata={
-                'timestamp': timestamp,
-                'position_updates': [],
-            },
-        )
-        self.event_bus.publish(portfolio_event, immediate=True)
-        return {"total_value": next_value}
-
-    engine.create_portfolio = types.MethodType(fake_create_portfolio, engine)
-    engine.create_broker = types.MethodType(fake_create_broker, engine)
-    engine.create_risk_manager = types.MethodType(fake_create_risk_manager, engine)
-    engine._process_signals_and_update_portfolio = types.MethodType(fake_process, engine)
-    engine._calculate_performance_metrics = types.MethodType(
-        lambda self: {
-            "final_portfolio_value": (
-                stub_portfolio.portfolio_values[-1] if stub_portfolio.portfolio_values else 0.0
-            )
-        },
-        engine,
-    )
-
-
 def test_backtest_engine_event_driven_flow() -> None:
     """Ensure the engine propagates events through the orchestrator to portfolio stubs."""
     config = BacktesterConfig()
@@ -205,23 +41,26 @@ def test_backtest_engine_event_driven_flow() -> None:
     market_data = _sample_market_data(rows=6)
     engine.current_data = market_data
 
-    captured_signals: list[SignalEvent] = []
-    captured_portfolio_events = []
+    tracked_events: dict[str, list[Any]] = defaultdict(list)
     engine.event_bus.subscribe(
-        lambda event: captured_signals.append(event),
-        EventFilter(event_types={"SIGNAL"}),
-    )
-    engine.event_bus.subscribe(
-        lambda event: captured_portfolio_events.append(event),
-        EventFilter(event_types={"PORTFOLIO_UPDATE"}),
+        lambda event: tracked_events[event.event_type].append(event),
+        EventFilter(
+            event_types={"MARKET_DATA", "SIGNAL", "ORDER", "PORTFOLIO_UPDATE", "RISK_ALERT"}
+        ),
     )
 
-    stub_portfolio = StubPortfolio()
-    stub_broker = StubBroker()
-    stub_risk = StubRiskManager()
-    processed_signals: list[list[dict[str, object]]] = []
+    periods = len(market_data) - 1
+    stub_portfolio, stub_broker, _ = install_engine_stubs(
+        engine,
+        risk_alert_after=max(2, periods * 2 - 2),
+    )
+    processed_signals: list[list[dict[str, Any]]] = []
+    capture_processed_signals(engine, processed_signals)
 
-    _install_stubs(engine, stub_portfolio, stub_broker, stub_risk, processed_signals)
+    engine._calculate_performance_metrics = types.MethodType(
+        lambda self: {"final_portfolio_value": stub_portfolio.total_value},
+        engine,
+    )
 
     original_create_strategy = engine.create_strategy
 
@@ -252,6 +91,7 @@ def test_backtest_engine_event_driven_flow() -> None:
                         "SELL" if "secondary" in getattr(self, "name", "").lower() else "BUY"
                     ),
                     "confidence": 0.9,
+                    "quantity": 1.0,
                     "metadata": {
                         "symbol": symbol,
                         "timestamp": (
@@ -277,16 +117,23 @@ def test_backtest_engine_event_driven_flow() -> None:
         )
         results = engine.run_backtest()
 
-    assert processed_signals, "The orchestrator should forward signals to the portfolio pipeline."
-    expected_iterations = len(market_data) - 1
-    assert len(processed_signals) == expected_iterations
+    expected_iterations = periods
     strategy_count = 2
-    assert len(captured_signals) >= expected_iterations * strategy_count
+
+    assert len(processed_signals) == expected_iterations
     assert all(batch for batch in processed_signals)
-    assert len(captured_portfolio_events) == expected_iterations
-    assert captured_portfolio_events[-1].total_value == pytest.approx(100.0 + expected_iterations)
+    assert len(tracked_events["MARKET_DATA"]) == expected_iterations
+    assert len(tracked_events["SIGNAL"]) >= expected_iterations * strategy_count
+    assert tracked_events["ORDER"]
+    assert len(tracked_events["PORTFOLIO_UPDATE"]) == expected_iterations
+    last_portfolio_event = tracked_events["PORTFOLIO_UPDATE"][-1]
+    assert last_portfolio_event.total_value == pytest.approx(stub_portfolio.total_value)
+    assert tracked_events["RISK_ALERT"]
+    assert tracked_events["RISK_ALERT"][0].metadata.get("violations") == ["MAX_DRAWDOWN"]
+    assert stub_broker.order_manager.cancel_all_orders.called
+
     assert results["performance"]["final_portfolio_value"] == pytest.approx(
-        100.0 + expected_iterations
+        stub_portfolio.total_value
     )
     assert stub_portfolio.before_run_calls == 1
     assert stub_portfolio.after_run_calls == 1

@@ -509,7 +509,7 @@ class BacktestEngine:
         self.logger.info("Created risk manager")
         return self.current_risk_manager
 
-    def run_backtest(
+    def run_backtest(  # noqa: C901
         self,
         ticker: str | None = None,
         start_date: str | None = None,
@@ -563,8 +563,33 @@ class BacktestEngine:
         }
         self._fire_before_run_hooks(lifecycle_metadata)
 
-        # Run simulation
-        self._run_simulation()
+        # Run simulation and capture portfolio/base/alpha capital series
+        simulation_result = self._run_simulation()
+        portfolio_values: list[float] = simulation_result.get('portfolio_values', [])
+        base_values: list[float] = simulation_result.get('base_values', [])
+        alpha_values: list[float] = simulation_result.get('alpha_values', [])
+
+        if self.current_portfolio is not None and portfolio_values:
+            self.current_portfolio.portfolio_values = portfolio_values
+
+        if not portfolio_values and self.current_portfolio is not None:
+            portfolio_values = list(getattr(self.current_portfolio, 'portfolio_values', []))
+
+        if not base_values:
+            if self.current_portfolio is not None and hasattr(
+                self.current_portfolio, 'base_values'
+            ):
+                base_values = list(self.current_portfolio.base_values)
+            elif portfolio_values:
+                base_values = [value / 2 for value in portfolio_values]
+
+        if not alpha_values:
+            if self.current_portfolio is not None and hasattr(
+                self.current_portfolio, 'alpha_values'
+            ):
+                alpha_values = list(self.current_portfolio.alpha_values)
+            elif portfolio_values:
+                alpha_values = [value / 2 for value in portfolio_values]
 
         # Calculate performance metrics
         self.performance_metrics = self._calculate_performance_metrics()
@@ -596,9 +621,9 @@ class BacktestEngine:
                 },
                 'performance': self.performance_metrics,
                 'trade_history': self.trade_history,
-                'portfolio_values': self.current_portfolio.portfolio_values,
-                'base_values': self.current_portfolio.portfolio_values,
-                'alpha_values': self.current_portfolio.portfolio_values,
+                'portfolio_values': portfolio_values,
+                'base_values': base_values,
+                'alpha_values': alpha_values,
                 'data': self.current_data,
             }
         else:
@@ -607,6 +632,9 @@ class BacktestEngine:
                 'performance': self.performance_metrics,
                 'trades': pd.DataFrame(),
                 'data': self.current_data,
+                'portfolio_values': portfolio_values,
+                'base_values': base_values,
+                'alpha_values': alpha_values,
             }
 
         self.backtest_results = final_results
