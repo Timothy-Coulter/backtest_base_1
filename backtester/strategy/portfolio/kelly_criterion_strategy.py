@@ -55,6 +55,11 @@ class KellyCriterionStrategy(BasePortfolioStrategy):
         self.kelly_history: list[dict[str, Any]] = []
         self.position_sizing_history: list[dict[str, Any]] = []
 
+    def _setup_event_subscriptions(self) -> None:
+        """Kelly strategy currently operates without event subscriptions."""
+        # Portfolio actions are triggered directly via the engine; no subscriptions required.
+        return
+
     def calculate_target_weights(self, market_data: dict[str, pd.DataFrame]) -> dict[str, float]:
         """Calculate Kelly criterion target portfolio weights.
 

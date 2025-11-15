@@ -89,7 +89,7 @@ class StrategyConfig(BaseModel):
         arbitrary_types_allowed=True,
     )
 
-    strategy_name: str = Field(default="DualPoolMA", description="Name of the strategy")
+    strategy_name: str = Field(default="momentum_strategy", description="Name of the strategy")
     ma_short: int = Field(default=5, description="Short moving average period")
     ma_long: int = Field(default=20, description="Long moving average period")
     leverage_base: float = Field(default=1.0, description="Base leverage")
@@ -110,6 +110,9 @@ class PortfolioConfig(BaseModel):
     )
 
     # Core portfolio parameters
+    portfolio_strategy_name: str = Field(
+        default="kelly_criterion", description="Default portfolio strategy identifier"
+    )
     initial_capital: float = Field(default=100.0, description="Initial capital")
     commission_rate: float = Field(default=0.001, description="Commission rate")
     interest_rate_daily: float = Field(default=0.00025, description="Daily interest rate")

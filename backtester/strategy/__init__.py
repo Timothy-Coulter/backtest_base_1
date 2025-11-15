@@ -1,11 +1,8 @@
 """Strategy module exports.
 
-This module exports all strategy components including base strategies,
-signal strategies, and portfolio strategies.
+This module exports all strategy components including signal strategies,
+portfolio strategies, and strategy orchestration helpers.
 """
-
-# Base strategy
-from .base import BaseStrategy, Signal
 
 # Strategy orchestration
 from .orchestration import (
@@ -51,9 +48,6 @@ from .signal.signal_strategy_config import SignalStrategyConfig
 from .signal.technical_analysis_strategy import TechnicalAnalysisStrategy
 
 __all__ = [
-    # Base strategy
-    'BaseStrategy',
-    'Signal',
     # Signal strategies
     'BaseSignalStrategy',
     'MeanReversionStrategy',

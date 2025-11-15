@@ -65,7 +65,7 @@ def mock_config() -> Mock:
 
     # Strategy config
     config.strategy = Mock()
-    config.strategy.strategy_name = "DualPoolMA"
+    config.strategy.strategy_name = "momentum_strategy"
     config.strategy.ma_short = 20
     config.strategy.ma_long = 50
     config.strategy.leverage_base = 2.0
@@ -78,6 +78,7 @@ def mock_config() -> Mock:
 
     # Portfolio config
     config.portfolio = Mock()
+    config.portfolio.portfolio_strategy_name = "kelly_criterion"
     config.portfolio.initial_capital = 1000.0
     config.portfolio.commission_rate = 0.001
     config.portfolio.maintenance_margin = 0.25
@@ -91,6 +92,7 @@ def mock_config() -> Mock:
     # Data config
     config.data = Mock()
     config.data.default_ticker = "SPY"
+    config.data.tickers = ["SPY"]
     config.data.start_date = "2020-01-01"
     config.data.end_date = "2024-01-01"
     config.data.interval = "1d"

@@ -14,7 +14,7 @@ from backtester.core.backtest_engine import BacktestEngine
 from backtester.core.config import BacktesterConfig
 from backtester.core.event_bus import EventFilter
 from backtester.core.events import SignalEvent
-from backtester.strategy.moving_average import DualPoolMovingAverageStrategy
+from backtester.strategy.signal.momentum_strategy import MomentumStrategy
 
 
 def _sample_market_data(rows: int = 5) -> pd.DataFrame:
@@ -110,6 +110,8 @@ def _install_stubs(
         day_high: float,
         day_low: float,
         timestamp: object,
+        symbol: str,
+        historical_data: pd.DataFrame,
     ) -> dict[str, float]:
         """Record processed signals and update stub portfolio values."""
         processed_signals.append(signals)
@@ -153,9 +155,9 @@ def test_backtest_engine_event_driven_flow() -> None:
     _install_stubs(engine, stub_portfolio, stub_broker, stub_risk, processed_signals)
 
     with patch.object(
-        DualPoolMovingAverageStrategy,
+        MomentumStrategy,
         "generate_signals",
-        lambda self, data: [{"signal_type": "BUY", "confidence": 0.9}],
+        lambda self, data, symbol: [{"signal_type": "BUY", "confidence": 0.9}],
     ):
         results = engine.run_backtest()
 

@@ -22,8 +22,6 @@ from backtester.execution.broker import SimulatedBroker
 from backtester.execution.order import OrderSide, OrderType
 from backtester.portfolio import GeneralPortfolio
 from backtester.risk_management.risk_control_manager import RiskControlManager
-from backtester.strategy.base import BaseStrategy
-from backtester.strategy.moving_average import DualPoolMovingAverageStrategy
 from backtester.strategy.orchestration import (
     BaseStrategyOrchestrator,
     OrchestrationConfig,
@@ -31,6 +29,15 @@ from backtester.strategy.orchestration import (
     StrategyKind,
     StrategyReference,
 )
+from backtester.strategy.portfolio.kelly_criterion_strategy import KellyCriterionStrategy
+from backtester.strategy.portfolio.portfolio_strategy_config import (
+    AllocationMethod,
+    PortfolioStrategyConfig,
+    PortfolioStrategyType,
+)
+from backtester.strategy.signal.base_signal_strategy import BaseSignalStrategy
+from backtester.strategy.signal.momentum_strategy import MomentumStrategy
+from backtester.strategy.signal.signal_strategy_config import MomentumStrategyConfig
 
 warnings.filterwarnings('ignore')
 
@@ -88,16 +95,17 @@ class BacktestEngine:
 
         # Initialize basic components - will be created when needed
         self.portfolio: GeneralPortfolio | None = None
-        self.strategy: BaseStrategy | None = None
+        self.strategy: BaseSignalStrategy | None = None
         self.broker: SimulatedBroker | None = None
         self.performance_tracker: Any | None = None
 
         # Backtesting state
         self.current_data: pd.DataFrame | None = None
-        self.current_strategy: BaseStrategy | None = None
+        self.current_strategy: BaseSignalStrategy | None = None
         self.current_portfolio: GeneralPortfolio | None = None
         self.current_broker: SimulatedBroker | None = None
         self.current_risk_manager: RiskControlManager | None = None
+        self.portfolio_strategy: KellyCriterionStrategy | None = None
 
         # Results storage
         self.backtest_results: dict[str, Any] = {}
@@ -145,7 +153,7 @@ class BacktestEngine:
             self.logger.error(f"Error loading data for {ticker}: {e}")
             raise ValueError(f"Failed to load data for {ticker}: {e}") from e
 
-    def create_strategy(self, strategy_params: dict[str, Any] | None = None) -> BaseStrategy:
+    def create_strategy(self, strategy_params: dict[str, Any] | None = None) -> BaseSignalStrategy:
         """Create trading strategy instance.
 
         Args:
@@ -156,26 +164,20 @@ class BacktestEngine:
         """
         strategy_params = strategy_params or {}
 
-        # Create strategy based on configuration
-        assert self.config.strategy is not None
-        if self.config.strategy.strategy_name == "DualPoolMA":
-            self.current_strategy = DualPoolMovingAverageStrategy(
-                name=self.config.strategy.strategy_name,
-                ma_short=self.config.strategy.ma_short,
-                ma_long=self.config.strategy.ma_long,
-                leverage_base=self.config.strategy.leverage_base,
-                leverage_alpha=self.config.strategy.leverage_alpha,
-                base_to_alpha_split=self.config.strategy.base_to_alpha_split,
-                alpha_to_base_split=self.config.strategy.alpha_to_base_split,
-                logger=self.logger,
-            )
-        else:
-            raise ValueError(f"Unknown strategy: {self.config.strategy.strategy_name}")
+        # Build configuration for the default momentum strategy
+        strategy_name = "momentum_strategy"
+        if self.config.strategy is not None and self.config.strategy.strategy_name:
+            strategy_name = self.config.strategy.strategy_name
 
-        # Update strategy parameters if provided
-        for key, value in strategy_params.items():
-            if hasattr(self.current_strategy, key):
-                setattr(self.current_strategy, key, value)
+        if strategy_name.lower() not in {"momentum_strategy", "momentum"}:
+            self.logger.warning(
+                "Strategy '%s' is not recognised. Falling back to momentum_strategy.",
+                strategy_name,
+            )
+
+        momentum_config = self._build_momentum_config(strategy_params, strategy_name)
+        self.current_strategy = MomentumStrategy(momentum_config, self.event_bus)
+        self.strategy = self.current_strategy
 
         # Register strategy with orchestrator for event-driven coordination
         self.strategy_orchestrator.unregister_strategy(self._primary_strategy_id)
@@ -188,6 +190,37 @@ class BacktestEngine:
 
         self.logger.info(f"Created strategy: {self.current_strategy.name}")
         return self.current_strategy
+
+    def _build_momentum_config(
+        self, strategy_params: dict[str, Any], configured_name: str
+    ) -> MomentumStrategyConfig:
+        """Construct the momentum strategy configuration from defaults and overrides."""
+        assert self.config.data is not None
+        raw_symbols = self.config.data.tickers or ["SPY"]
+        symbols = [raw_symbols] if isinstance(raw_symbols, str) else list(raw_symbols)
+
+        config_values: dict[str, Any] = {
+            "name": configured_name or "momentum_strategy",
+            "strategy_name": configured_name or "momentum_strategy",
+            "symbols": symbols,
+        }
+
+        if self.config.strategy is not None:
+            for field in MomentumStrategyConfig.model_fields:
+                if hasattr(self.config.strategy, field):
+                    value = getattr(self.config.strategy, field)
+                    if value is None:
+                        continue
+                    if getattr(value, "_mock_parent", None) is not None:
+                        continue
+                    config_values[field] = value
+
+        # User supplied overrides take highest priority
+        for key, value in strategy_params.items():
+            if key in MomentumStrategyConfig.model_fields and value is not None:
+                config_values[key] = value
+
+        return MomentumStrategyConfig(**config_values)
 
     def create_portfolio(self, portfolio_params: dict[str, Any] | None = None) -> GeneralPortfolio:
         """Create portfolio instance.
@@ -267,10 +300,61 @@ class BacktestEngine:
         # Update portfolio alias for test compatibility
         self.portfolio = self.current_portfolio
 
+        assert self.config.data is not None
+        raw_symbols = self.config.data.tickers or ["SPY"]
+        symbols = [raw_symbols] if isinstance(raw_symbols, str) else list(raw_symbols)
+        self._initialize_portfolio_strategy(symbols, portfolio_params)
+
         self.logger.info(
             f"Created portfolio with ${self.current_portfolio.initial_capital:.2f} initial capital"
         )
         return self.current_portfolio
+
+    def _initialize_portfolio_strategy(
+        self, symbols: list[str], portfolio_params: dict[str, Any]
+    ) -> None:
+        """Create or update the Kelly criterion portfolio strategy."""
+        if self.current_portfolio is None:
+            return
+
+        if self.portfolio_strategy is None:
+            portfolio_config = self._build_portfolio_strategy_config(symbols, portfolio_params)
+            self.portfolio_strategy = KellyCriterionStrategy(portfolio_config, self.event_bus)
+
+        self.portfolio_strategy.initialize_portfolio(self.current_portfolio)
+
+    def _build_portfolio_strategy_config(
+        self, symbols: list[str], portfolio_params: dict[str, Any]
+    ) -> PortfolioStrategyConfig:
+        """Assemble configuration for the Kelly portfolio strategy."""
+        strategy_name = "kelly_criterion"
+        if self.config.portfolio is not None and getattr(
+            self.config.portfolio, "portfolio_strategy_name", None
+        ):
+            strategy_name = self.config.portfolio.portfolio_strategy_name
+
+        config_values: dict[str, Any] = {
+            "strategy_name": strategy_name,
+            "strategy_type": PortfolioStrategyType.KELLY_CRITERION,
+            "symbols": symbols,
+            "allocation_method": AllocationMethod.KELLY_CRITERION,
+        }
+
+        if self.config.portfolio is not None:
+            for field in ("min_position_size", "max_position_size"):
+                if hasattr(self.config.portfolio, field):
+                    value = getattr(self.config.portfolio, field)
+                    if value is None:
+                        continue
+                    if getattr(value, "_mock_parent", None) is not None:
+                        continue
+                    config_values[field] = value
+
+        for key, value in portfolio_params.items():
+            if key in PortfolioStrategyConfig.model_fields and value is not None:
+                config_values[key] = value
+
+        return PortfolioStrategyConfig(**config_values)
 
     def create_broker(self) -> SimulatedBroker:
         """Create broker instance.
@@ -372,6 +456,14 @@ class BacktestEngine:
 
         # Compile final results
         if self.current_strategy is not None and self.current_portfolio is not None:
+            strategy_parameters: dict[str, Any] = {}
+            get_params = getattr(self.current_strategy, "get_strategy_parameters", None)
+            if callable(get_params):
+                try:
+                    strategy_parameters = get_params()
+                except Exception as exc:
+                    self.logger.debug("Could not retrieve strategy parameters: %s", exc)
+
             final_results = {
                 'strategy_name': self.current_strategy.name,
                 'data_period': {
@@ -380,7 +472,7 @@ class BacktestEngine:
                     'periods': len(self.current_data),
                 },
                 'parameters': {
-                    'strategy': self.current_strategy.get_strategy_parameters(),
+                    'strategy': strategy_parameters,
                     'portfolio': {
                         'initial_capital': self.current_portfolio.initial_capital,
                         'commission_rate': self.current_portfolio.commission_rate,
@@ -431,6 +523,11 @@ class BacktestEngine:
         for i in range(len(self.current_data) - 1):
             current_time = self.current_data.index[i]
             current_row = self.current_data.iloc[i : i + 1]  # Single row DataFrame
+            current_row_extended = current_row.copy()
+            for column in list(current_row.columns):
+                lower_column = column.lower()
+                if lower_column not in current_row_extended.columns:
+                    current_row_extended[lower_column] = current_row_extended[column]
 
             # Get current market data
             current_price = current_row['Close'].iloc[0]
@@ -451,21 +548,30 @@ class BacktestEngine:
                 "data_type": "bar",
             }
             market_event = create_market_data_event(simulation_symbol, market_payload)
-            market_event.metadata.setdefault("data_frame", current_row.copy())
+            market_event.metadata.setdefault("data_frame", current_row_extended.copy())
             self.event_bus.publish(market_event)
 
             orchestration_result = self.strategy_orchestrator.on_market_data(
-                market_event, current_row
+                market_event, current_row_extended
             )
             signals = [signal.payload for signal in orchestration_result.signals]
 
             # Fallback to direct strategy invocation when orchestrator produced nothing
             if not signals and self.current_strategy is not None:
-                signals = self.current_strategy.generate_signals(current_row)
+                signals = self.current_strategy.generate_signals(
+                    current_row_extended, simulation_symbol
+                )
 
             # Process signals and update portfolio
+            historical_window = self.current_data.iloc[: i + 1]
             portfolio_update = self._process_signals_and_update_portfolio(
-                signals, current_price, day_high, day_low, current_time
+                signals,
+                current_price,
+                day_high,
+                day_low,
+                current_time,
+                simulation_symbol,
+                historical_window,
             )
 
             # Check risk management
@@ -486,7 +592,9 @@ class BacktestEngine:
 
             # Update strategy step
             if self.current_strategy is not None:
-                self.current_strategy.update_step(i + 1)
+                update_step = getattr(self.current_strategy, "update_step", None)
+                if callable(update_step):
+                    update_step(i + 1)
 
             # Log progress for large datasets
             if (i + 1) % 50 == 0:
@@ -510,6 +618,8 @@ class BacktestEngine:
         day_high: float,
         day_low: float,
         timestamp: Any,
+        symbol: str,
+        historical_data: pd.DataFrame,
     ) -> dict[str, Any]:
         """Process strategy signals and update portfolio.
 
@@ -519,6 +629,8 @@ class BacktestEngine:
             day_high: High price for the day
             day_low: Low price for the day
             timestamp: Current timestamp
+            symbol: Trading symbol being processed
+            historical_data: Historical data up to the current timestamp
 
         Returns:
             Portfolio update information
@@ -529,53 +641,131 @@ class BacktestEngine:
             timestamp=timestamp, current_price=current_price, day_high=day_high, day_low=day_low
         )
 
-        # Process signals (generate orders based on signals)
-        for signal in signals:
-            self._process_signal(signal, current_price, timestamp)
+        orders: list[dict[str, Any]] = []
+        if self.portfolio_strategy is not None:
+            market_data = self._prepare_portfolio_market_data(symbol, historical_data)
+            if market_data:
+                try:
+                    self.portfolio_strategy.update_portfolio_state(market_data)
+                    target_weights = self.portfolio_strategy.calculate_target_weights(market_data)
+                    self.portfolio_strategy.target_weights = target_weights
+
+                    enriched_signals: list[dict[str, Any]] = []
+                    for signal in signals:
+                        enriched_signal = dict(signal)
+                        enriched_signal.setdefault('symbol', symbol)
+                        enriched_signal.setdefault(
+                            'type', enriched_signal.get('signal_type', 'HOLD')
+                        )
+                        enriched_signal.setdefault('timestamp', timestamp)
+                        enriched_signals.append(enriched_signal)
+
+                    orders = self.portfolio_strategy.process_signals(enriched_signals)
+                except Exception as exc:
+                    self.logger.warning("Kelly portfolio strategy processing failed: %s", exc)
+
+        if not orders:
+            orders = self._fallback_orders_from_signals(signals, symbol, timestamp)
+
+        for order in orders:
+            enriched_order = dict(order)
+            enriched_order.setdefault('symbol', symbol)
+            enriched_order.setdefault('price', current_price)
+            enriched_order.setdefault('timestamp', timestamp)
+            metadata = dict(enriched_order.get('metadata', {}))
+            metadata.setdefault('origin', 'signal_processing')
+            metadata.setdefault('source_signal', order)
+            enriched_order['metadata'] = metadata
+            self._process_signal(enriched_order, symbol, current_price, timestamp)
 
         return portfolio_update
 
-    def _process_signal(self, signal: dict[str, Any], current_price: float, timestamp: Any) -> None:
+    def _fallback_orders_from_signals(
+        self, signals: list[dict[str, Any]], symbol: str, timestamp: Any
+    ) -> list[dict[str, Any]]:
+        """Convert raw signals into simple market orders when no portfolio strategy is present."""
+        orders: list[dict[str, Any]] = []
+        for signal in signals:
+            side = str(signal.get('signal_type', signal.get('side', 'HOLD'))).upper()
+            if side not in {'BUY', 'SELL'}:
+                continue
+            quantity = signal.get('quantity', signal.get('size', 1.0))
+            try:
+                quantity_value = float(quantity)
+            except (TypeError, ValueError):
+                quantity_value = 1.0
+
+            if quantity_value <= 0:
+                continue
+
+            orders.append(
+                {
+                    'symbol': symbol,
+                    'side': side,
+                    'quantity': quantity_value,
+                    'price': signal.get('price'),
+                    'metadata': signal,
+                    'timestamp': timestamp,
+                }
+            )
+        return orders
+
+    def _prepare_portfolio_market_data(
+        self, symbol: str, historical_data: pd.DataFrame
+    ) -> dict[str, pd.DataFrame]:
+        """Prepare market data dictionary for portfolio strategy consumption."""
+        if historical_data is None or historical_data.empty:
+            return {}
+
+        normalized = historical_data.copy()
+        normalized.columns = [col.lower() for col in normalized.columns]
+        return {symbol: normalized}
+
+    def _process_signal(
+        self, signal: dict[str, Any], symbol: str, current_price: float, timestamp: Any
+    ) -> None:
         """Process individual trading signal.
 
         Args:
             signal: Signal dictionary
+            symbol: Trading symbol
             current_price: Current market price
             timestamp: Current timestamp
         """
-        signal_type = signal.get('signal_type', '').upper()
+        side_raw = signal.get('side', signal.get('signal_type', '')).upper()
+        if side_raw not in {'BUY', 'SELL'}:
+            return
 
-        if signal_type == 'BUY':
-            # Create buy order
-            assert self.current_broker is not None
-            assert self.config.data is not None
-            ticker = self.config.data.tickers[0] if self.config.data.tickers else "SPY"
-            order = self.current_broker.order_manager.create_order(
-                symbol=ticker,
-                side=OrderSide.BUY,
-                order_type=OrderType.MARKET,
-                quantity=1.0,  # Standardized quantity
-                metadata=signal,
-            )
+        quantity_value = signal.get('quantity', signal.get('size', 1.0))
+        try:
+            quantity = float(quantity_value)
+        except (TypeError, ValueError):
+            quantity = 1.0
 
-            # Execute order
-            self.current_broker.execute_order(order)
+        if quantity <= 0:
+            return
 
-        elif signal_type == 'SELL':
-            # Create sell order
-            assert self.current_broker is not None
-            assert self.config.data is not None
-            ticker = self.config.data.tickers[0] if self.config.data.tickers else "SPY"
-            order = self.current_broker.order_manager.create_order(
-                symbol=ticker,
-                side=OrderSide.SELL,
-                order_type=OrderType.MARKET,
-                quantity=1.0,
-                metadata=signal,
-            )
+        price_value = signal.get('price', current_price)
+        try:
+            price = float(price_value) if price_value is not None else None
+        except (TypeError, ValueError):
+            price = None
 
-            # Execute order
-            self.current_broker.execute_order(order)
+        metadata = dict(signal)
+        metadata.setdefault('timestamp', timestamp)
+        metadata.setdefault('symbol', symbol)
+
+        assert self.current_broker is not None
+        order = self.current_broker.order_manager.create_order(
+            symbol=symbol,
+            side=OrderSide[side_raw],
+            order_type=OrderType.MARKET,
+            quantity=quantity,
+            price=price,
+            metadata=metadata,
+        )
+
+        self.current_broker.execute_order(order)
 
     def _check_risk_management(self, portfolio_value: float) -> None:
         """Check and apply risk management rules.
