@@ -2,6 +2,7 @@
 
 import os
 import time
+from threading import Lock
 from typing import Any
 
 import pandas as pd
@@ -10,6 +11,49 @@ from findatapy.timeseries import DataQuality
 from findatapy.util import LoggerManager
 
 from backtester.core.config import DataRetrievalConfig
+
+
+class _InMemoryDataCache:
+    """Thread-safe in-memory cache keyed off the data retrieval parameters."""
+
+    def __init__(self) -> None:
+        self._frames: dict[tuple[Any, ...], pd.DataFrame] = {}
+        self._lock = Lock()
+
+    def build_key(self, config: DataRetrievalConfig) -> tuple[Any, ...]:
+        tickers = config.tickers
+        if isinstance(tickers, str):
+            tickers_tuple: tuple[Any, ...] = (tickers,)
+        elif tickers is None:
+            tickers_tuple = ()
+        else:
+            tickers_tuple = tuple(tickers)
+
+        return (
+            config.data_source,
+            tickers_tuple,
+            str(config.start_date),
+            str(config.finish_date),
+            str(config.freq),
+        )
+
+    def get(self, key: tuple[Any, ...]) -> pd.DataFrame | None:
+        with self._lock:
+            frame = self._frames.get(key)
+        if frame is None:
+            return None
+        return frame.copy(deep=True)
+
+    def set(self, key: tuple[Any, ...], frame: pd.DataFrame) -> None:
+        with self._lock:
+            self._frames[key] = frame.copy(deep=True)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._frames.clear()
+
+
+_DATA_CACHE = _InMemoryDataCache()
 
 
 class DataRetrieval:
@@ -33,19 +77,28 @@ class DataRetrieval:
         self.logger = LoggerManager().getLogger(__name__)
 
         # Load API keys from environment if not provided in config
-        self._load_api_keys()
+        self._populate_api_keys(self.config)
 
-    def _load_api_keys(self) -> None:
+    def _populate_api_keys(self, config: DataRetrievalConfig) -> None:
         """Load API keys from environment variables if not provided in config."""
-        if self.config.fred_api_key is None:
-            self.config.fred_api_key = os.getenv("FRED_API_KEY")
-        if self.config.alpha_vantage_api_key is None:
-            self.config.alpha_vantage_api_key = os.getenv("ALPHAVANTAGE_API_KEY")
-        if self.config.eikon_api_key is None:
-            self.config.eikon_api_key = os.getenv("EIKON_API_KEY")
+        if config.fred_api_key is None:
+            config.fred_api_key = os.getenv("FRED_API_KEY")
+        if config.alpha_vantage_api_key is None:
+            config.alpha_vantage_api_key = os.getenv("ALPHAVANTAGE_API_KEY")
+        if config.eikon_api_key is None:
+            config.eikon_api_key = os.getenv("EIKON_API_KEY")
+
+    def _resolve_config(self, override: DataRetrievalConfig | None) -> DataRetrievalConfig:
+        """Return a copy of the base config merged with an optional override."""
+        if override is not None:
+            resolved = override.model_copy(deep=True)
+        else:
+            resolved = self.config.model_copy(deep=True)
+        self._populate_api_keys(resolved)
+        return resolved
 
     def _create_market_data_request(
-        self, cache_algo: str = "internet_load_return"
+        self, config: DataRetrievalConfig, cache_algo: str = "internet_load_return"
     ) -> MarketDataRequest:
         """Create a MarketDataRequest from the configuration.
 
@@ -60,33 +113,35 @@ class DataRetrieval:
             Configured market data request
         """
         return MarketDataRequest(
-            data_source=self.config.data_source,
-            start_date=self.config.start_date,
-            finish_date=self.config.finish_date,
-            tickers=self.config.tickers,
-            category=self.config.category,
-            freq_mult=self.config.freq_mult,
-            freq=self.config.freq,
-            gran_freq=self.config.gran_freq,
-            cut=self.config.cut,
-            fields=self.config.fields,
+            data_source=config.data_source,
+            start_date=config.start_date,
+            finish_date=config.finish_date,
+            tickers=config.tickers,
+            category=config.category,
+            freq_mult=config.freq_mult,
+            freq=config.freq,
+            gran_freq=config.gran_freq,
+            cut=config.cut,
+            fields=config.fields,
             cache_algo=cache_algo,
-            vendor_tickers=self.config.vendor_tickers,
-            vendor_fields=self.config.vendor_fields,
-            environment=self.config.environment,
-            trade_side=self.config.trade_side,
-            resample=self.config.resample,
-            resample_how=self.config.resample_how,
-            split_request_chunks=self.config.split_request_chunks,
-            list_threads=self.config.list_threads,
-            fred_api_key=self.config.fred_api_key,
-            alpha_vantage_api_key=self.config.alpha_vantage_api_key,
-            eikon_api_key=self.config.eikon_api_key,
-            push_to_cache=self.config.push_to_cache,
-            overrides=self.config.overrides,
+            vendor_tickers=config.vendor_tickers,
+            vendor_fields=config.vendor_fields,
+            environment=config.environment,
+            trade_side=config.trade_side,
+            resample=config.resample,
+            resample_how=config.resample_how,
+            split_request_chunks=config.split_request_chunks,
+            list_threads=config.list_threads,
+            fred_api_key=config.fred_api_key,
+            alpha_vantage_api_key=config.alpha_vantage_api_key,
+            eikon_api_key=config.eikon_api_key,
+            push_to_cache=config.push_to_cache,
+            overrides=config.overrides,
         )
 
-    def load_from_cache(self) -> pd.DataFrame | None:
+    def load_from_cache(
+        self, target_config: DataRetrievalConfig | None = None
+    ) -> pd.DataFrame | None:
         """Attempt to load data from cache.
 
         Returns:
@@ -94,9 +149,13 @@ class DataRetrieval:
         Optional[pd.DataFrame]
             Cached data if available, None otherwise
         """
+        config = self._resolve_config(target_config)
+        return self._load_from_cache_for_config(config)
+
+    def _load_from_cache_for_config(self, config: DataRetrievalConfig) -> pd.DataFrame | None:
         try:
             self.logger.info("Attempting to load data from cache...")
-            md_request = self._create_market_data_request(cache_algo="cache_algo_return")
+            md_request = self._create_market_data_request(config, cache_algo="cache_algo_return")
 
             start_time = time.time()
             df = self.market.fetch_market(md_request)
@@ -115,7 +174,7 @@ class DataRetrieval:
             self.logger.warning(f"Failed to load from cache: {str(e)}")
             return None
 
-    def download_data(self) -> pd.DataFrame:
+    def download_data(self, target_config: DataRetrievalConfig | None = None) -> pd.DataFrame:
         """Download data from the data source.
 
         Returns:
@@ -123,9 +182,13 @@ class DataRetrieval:
         pd.DataFrame
             Downloaded market data
         """
+        config = self._resolve_config(target_config)
+        return self._download_data_for_config(config)
+
+    def _download_data_for_config(self, config: DataRetrievalConfig) -> pd.DataFrame:
         try:
             self.logger.info("Downloading data from data source...")
-            md_request = self._create_market_data_request(cache_algo="internet_load_return")
+            md_request = self._create_market_data_request(config, cache_algo="internet_load_return")
 
             start_time = time.time()
             df = self.market.fetch_market(md_request)
@@ -143,7 +206,7 @@ class DataRetrieval:
             self.logger.error(f"Failed to download data: {str(e)}")
             raise
 
-    def get_data(self) -> pd.DataFrame:
+    def get_data(self, config_override: DataRetrievalConfig | None = None) -> pd.DataFrame:
         """Get data with cache-first logic.
 
         This method first attempts to load from cache. If that fails,
@@ -155,13 +218,20 @@ class DataRetrieval:
             Market data from cache or download
         """
         # First try to load from cache
-        cached_data = self.load_from_cache()
-        if cached_data is not None:
-            return cached_data
+        effective_config = self._resolve_config(config_override)
+        cache_key = _DATA_CACHE.build_key(effective_config)
+        cached_frame = _DATA_CACHE.get(cache_key)
+        if cached_frame is not None:
+            self.logger.info("Returning data from in-memory cache for key %s", cache_key)
+            return cached_frame
 
-        # If cache failed, download from source
-        self.logger.info("Cache load failed, attempting download from data source...")
-        return self.download_data()
+        cached_data = self._load_from_cache_for_config(effective_config)
+        if cached_data is None:
+            self.logger.info("Cache load failed, attempting download from data source...")
+            cached_data = self._download_data_for_config(effective_config)
+
+        _DATA_CACHE.set(cache_key, cached_data)
+        return cached_data
 
     def validate_data_quality(
         self,
@@ -418,3 +488,8 @@ class DataRetrieval:
             f"start_date='{self.config.start_date}', "
             f"finish_date='{self.config.finish_date}'))"
         )
+
+
+def clear_data_retrieval_cache() -> None:
+    """Clear the shared in-memory DataRetrieval cache (primarily for tests)."""
+    _DATA_CACHE.clear()

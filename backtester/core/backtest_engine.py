@@ -12,7 +12,7 @@ from typing import Any
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from backtester.core.config import BacktesterConfig, get_config
+from backtester.core.config import BacktesterConfig, BacktestRunConfig, get_config
 from backtester.core.event_bus import EventBus, EventFilter
 from backtester.core.event_handlers import PortfolioHandler, SignalHandler
 from backtester.core.events import (
@@ -103,7 +103,8 @@ class BacktestEngine:
             event_bus: Optional shared event bus instance
             strategy_orchestrator: Optional strategy orchestrator instance
         """
-        self.config: BacktesterConfig = config or get_config()
+        base_config = config or get_config()
+        self.config: BacktesterConfig = BacktestRunConfig(base_config).build()
         self.logger: logging.Logger = logger or get_backtester_logger(__name__)
         self.event_bus: EventBus
 
@@ -187,20 +188,36 @@ class BacktestEngine:
         Returns:
             Loaded market data
         """
-        ticker = ticker or (
-            self.config.data.tickers[0] if self.config.data and self.config.data.tickers else "SPY"
-        )
-        start_date = start_date or (
-            self.config.data.start_date if self.config.data else "2015-01-01"
-        )
-        end_date = end_date or (self.config.data.finish_date if self.config.data else "2024-01-01")
-        interval = interval or (self.config.data.freq if self.config.data else "1mo")
+        data_overrides: dict[str, Any] = {}
+        if ticker is not None:
+            data_overrides["tickers"] = [ticker]
+        if start_date is not None:
+            data_overrides["start_date"] = start_date
+        if end_date is not None:
+            data_overrides["finish_date"] = end_date
+        if interval is not None:
+            data_overrides["freq"] = interval
 
-        self.logger.info(f"Loading data for {ticker} from {start_date} to {end_date}")
+        builder = BacktestRunConfig(self.config)
+        if data_overrides:
+            builder.with_data_overrides(**data_overrides)
+        run_config = builder.build()
+        assert run_config.data is not None
+        target_data_config = run_config.data
+        tickers_field = target_data_config.tickers or ["SPY"]
+        if isinstance(tickers_field, str):
+            tickers_field = [tickers_field]
+
+        self.logger.info(
+            "Loading data for %s from %s to %s (freq=%s)",
+            ",".join(tickers_field),
+            target_data_config.start_date,
+            target_data_config.finish_date,
+            target_data_config.freq,
+        )
 
         try:
-            assert self.config.data is not None
-            self.current_data = self.data_handler.get_data()
+            self.current_data = self.data_handler.get_data(target_data_config)
 
             self.logger.info(f"Loaded {len(self.current_data)} records")
             return self.current_data
@@ -909,7 +926,7 @@ class BacktestEngine:
         assert self.config.data is not None
         if self.config.performance.benchmark_enabled:
             try:
-                benchmark_data = self.data_handler.get_data()
+                benchmark_data = self.data_handler.get_data(self.config.data)
                 benchmark_values = benchmark_data['Close'] * (
                     portfolio_values.iloc[0] / benchmark_data['Close'].iloc[0]
                 )

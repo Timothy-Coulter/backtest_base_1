@@ -1,13 +1,18 @@
 """Unit tests for DataRetrieval classes."""
 
 import logging
+from collections.abc import Iterator
 from unittest.mock import Mock, patch
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from backtester.data.data_retrieval import DataRetrieval, DataRetrievalConfig
+from backtester.data.data_retrieval import (
+    DataRetrieval,
+    DataRetrievalConfig,
+    clear_data_retrieval_cache,
+)
 
 
 class TestDataRetrievalConfig:
@@ -74,6 +79,14 @@ class TestDataRetrievalConfig:
         # Test JSON serialization
         config_json = config.model_dump_json()
         assert isinstance(config_json, str)
+
+
+@pytest.fixture(autouse=True)
+def reset_data_cache() -> Iterator[None]:
+    """Ensure the shared cache is cleared between tests."""
+    clear_data_retrieval_cache()
+    yield
+    clear_data_retrieval_cache()
 
 
 class TestDataRetrieval:
@@ -158,7 +171,7 @@ class TestDataRetrieval:
                 mock_md_request = Mock()
                 mock_request.return_value = mock_md_request
 
-                retrieval._create_market_data_request("cache_algo_return")
+                retrieval._create_market_data_request(sample_config, "cache_algo_return")
 
                 # Verify MarketDataRequest was called with correct parameters
                 mock_request.assert_called_once()
@@ -411,6 +424,71 @@ class TestDataRetrieval:
             assert result["data"] is not None
             assert "validation_results" in result
             assert len(result["quality_issues"]) == 0
+
+    def test_get_data_in_memory_cache_hit(
+        self,
+        sample_config: DataRetrievalConfig,
+        sample_market_data: pd.DataFrame,
+        mock_market: Mock,
+    ) -> None:
+        """Subsequent calls with the same parameters should use the in-memory cache."""
+        with (
+            patch('backtester.data.data_retrieval.Market', return_value=mock_market),
+            patch('backtester.data.data_retrieval.DataQuality'),
+        ):
+            retrieval = DataRetrieval(sample_config)
+            mock_market.fetch_market.return_value = sample_market_data
+
+            first = retrieval.get_data()
+            pd.testing.assert_frame_equal(first, sample_market_data)
+
+            mock_market.fetch_market.reset_mock()
+            second = retrieval.get_data()
+
+            assert mock_market.fetch_market.call_count == 0
+            pd.testing.assert_frame_equal(first, second)
+
+    def test_get_data_respects_overrides(
+        self,
+        sample_config: DataRetrievalConfig,
+        sample_market_data: pd.DataFrame,
+        mock_market: Mock,
+    ) -> None:
+        """Overrides should be honoured when passed to get_data."""
+        with (
+            patch('backtester.data.data_retrieval.Market', return_value=mock_market),
+            patch('backtester.data.data_retrieval.DataQuality'),
+        ):
+            retrieval = DataRetrieval(sample_config)
+            mock_market.fetch_market.return_value = sample_market_data
+
+            override = sample_config.model_copy(update={"tickers": ["MSFT"], "freq": "weekly"})
+            retrieval.get_data(config_override=override)
+
+            md_request = mock_market.fetch_market.call_args[0][0]
+            assert md_request.tickers == ["MSFT"]
+            assert md_request.freq == "weekly"
+
+    def test_get_data_cache_key_differs_for_overrides(
+        self,
+        sample_config: DataRetrievalConfig,
+        sample_market_data: pd.DataFrame,
+        mock_market: Mock,
+    ) -> None:
+        """Different overrides should lead to separate cache entries."""
+        with (
+            patch('backtester.data.data_retrieval.Market', return_value=mock_market),
+            patch('backtester.data.data_retrieval.DataQuality'),
+        ):
+            retrieval = DataRetrieval(sample_config)
+            mock_market.fetch_market.return_value = sample_market_data
+
+            retrieval.get_data()
+            override = sample_config.model_copy(update={"tickers": ["MSFT"]})
+            retrieval.get_data(config_override=override)
+
+            # First call hits persistent cache once, override triggers another fetch
+            assert mock_market.fetch_market.call_count == 2
 
     def test_get_data_with_validation_with_issues(
         self,

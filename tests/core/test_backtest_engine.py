@@ -14,6 +14,7 @@ import pytest
 # Import the module being tested
 try:
     from backtester.core.backtest_engine import BacktestEngine
+    from backtester.core.config import BacktesterConfig
 except ImportError as e:
     pytest.skip(f"Could not import backtester modules: {e}", allow_module_level=True)
 
@@ -21,7 +22,7 @@ except ImportError as e:
 class TestBacktestEngine:
     """Test suite for the BacktestEngine class."""
 
-    def test_initialization(self, mock_config: Mock) -> None:
+    def test_initialization(self, mock_config: BacktesterConfig) -> None:
         """Test that BacktestEngine initializes correctly."""
         engine = BacktestEngine(config=mock_config)
 
@@ -34,28 +35,32 @@ class TestBacktestEngine:
         assert engine.performance_tracker is None
         assert engine.performance_analyzer is not None
 
-    def test_load_data_success(self, test_data: pd.DataFrame) -> None:
+    def test_load_data_success(
+        self, test_data: pd.DataFrame, mock_config: BacktesterConfig
+    ) -> None:
         """Test successful data loading."""
         with patch.object(BacktestEngine, 'load_data') as mock_load:
             # Create engine with mocked load_data
-            engine = BacktestEngine(config=Mock())
+            engine = BacktestEngine(config=mock_config)
             mock_load.return_value = test_data
             result = engine.load_data('SPY', '2020-01-01', '2024-01-01', '1mo')
 
             assert result.equals(test_data)
             mock_load.assert_called_once_with('SPY', '2020-01-01', '2024-01-01', '1mo')
 
-    def test_load_data_failure(self) -> None:
+    def test_load_data_failure(self, mock_config: BacktesterConfig) -> None:
         """Test data loading failure handling."""
         with patch.object(BacktestEngine, 'load_data') as mock_load:
             mock_load.side_effect = Exception("Failed to load data")
 
-            engine = BacktestEngine(config=Mock())
+            engine = BacktestEngine(config=mock_config)
 
             with pytest.raises(Exception, match="Failed to load data"):
                 engine.load_data('INVALID', '2020-01-01', '2024-01-01', '1mo')
 
-    def test_run_backtest_success(self, test_data: pd.DataFrame, mock_config: Mock) -> None:
+    def test_run_backtest_success(
+        self, test_data: pd.DataFrame, mock_config: BacktesterConfig
+    ) -> None:
         """Test successful backtest execution."""
         # Create mock portfolio with proper attributes
         mock_portfolio_obj = Mock()
@@ -108,7 +113,7 @@ class TestBacktestEngine:
             assert 'portfolio_values' in result or 'trades' in result
             assert 'total_return' in result['performance']
 
-    def test_run_backtest_with_missing_data(self, mock_config: Mock) -> None:
+    def test_run_backtest_with_missing_data(self, mock_config: BacktesterConfig) -> None:
         """Test backtest handling of missing or insufficient data."""
         with patch.object(BacktestEngine, 'load_data') as mock_load:
             mock_load.return_value = pd.DataFrame()  # Empty data
@@ -119,7 +124,9 @@ class TestBacktestEngine:
             with pytest.raises(ValueError, match="Insufficient data"):
                 engine.run_backtest('SPY', '2020-01-01', '2024-01-01', '1mo')
 
-    def test_run_strategy_backtest(self, test_data: pd.DataFrame, mock_config: Mock) -> None:
+    def test_run_strategy_backtest(
+        self, test_data: pd.DataFrame, mock_config: BacktesterConfig
+    ) -> None:
         """Test the strategy backtest execution."""
         engine = BacktestEngine(config=mock_config)
         engine.current_data = test_data  # Set current_data
@@ -137,7 +144,7 @@ class TestBacktestEngine:
             assert isinstance(result, dict)
             assert 'performance' in result or 'data' in result
 
-    def test_calculate_performance(self, mock_config: Mock) -> None:
+    def test_calculate_performance(self, mock_config: BacktesterConfig) -> None:
         """Test performance calculation."""
         engine = BacktestEngine(config=mock_config)
 
@@ -163,7 +170,9 @@ class TestBacktestEngine:
         assert 'win_rate' in result
         assert isinstance(result['total_return'], float)
 
-    def test_handle_exception_gracefully(self, test_data: pd.DataFrame, mock_config: Mock) -> None:
+    def test_handle_exception_gracefully(
+        self, test_data: pd.DataFrame, mock_config: BacktesterConfig
+    ) -> None:
         """Test that exceptions are handled gracefully during backtesting."""
         with (
             patch.object(BacktestEngine, 'load_data') as mock_load,
@@ -178,7 +187,7 @@ class TestBacktestEngine:
             with pytest.raises(Exception, match="Strategy error"):
                 engine.run_backtest('SPY', '2020-01-01', '2024-01-01', '1mo')
 
-    def test_validate_config(self, mock_config: Mock) -> None:
+    def test_validate_config(self, mock_config: BacktesterConfig) -> None:
         """Test configuration validation."""
         engine = BacktestEngine(config=mock_config)
 
@@ -190,7 +199,7 @@ class TestBacktestEngine:
         # This gets default config, so it should be valid
         assert engine_none._validate_config() is True
 
-    def test_get_status(self, test_data: pd.DataFrame, mock_config: Mock) -> None:
+    def test_get_status(self, test_data: pd.DataFrame, mock_config: BacktesterConfig) -> None:
         """Test getting backtest status information."""
         engine = BacktestEngine(config=mock_config)
 
@@ -210,7 +219,12 @@ class TestBacktestEngine:
         ],
     )
     def test_run_backtest_parameters(
-        self, ticker: str, start_date: str, end_date: str, interval: str, mock_config: Mock
+        self,
+        ticker: str,
+        start_date: str,
+        end_date: str,
+        interval: str,
+        mock_config: BacktesterConfig,
     ) -> None:
         """Test backtest with various parameter combinations."""
         test_data_small = pd.DataFrame(
@@ -268,7 +282,9 @@ class TestBacktestEngine:
             assert 'performance' in result
             mock_load.assert_called_once_with(ticker, start_date, end_date, interval)
 
-    def test_memory_efficiency(self, test_data: pd.DataFrame, mock_config: Mock) -> None:
+    def test_memory_efficiency(
+        self, test_data: pd.DataFrame, mock_config: BacktesterConfig
+    ) -> None:
         """Test that backtest runs efficiently with memory constraints."""
         # Test with larger dataset
         large_data = pd.concat([test_data] * 100)  # Simulate large dataset
@@ -316,7 +332,7 @@ class TestBacktestEngine:
             assert result is not None
             assert 'performance' in result
 
-    def test_concurrent_safety(self, mock_config: Mock) -> None:
+    def test_concurrent_safety(self, mock_config: BacktesterConfig) -> None:
         """Test that multiple engines can run safely."""
         engine1 = BacktestEngine(config=mock_config)
         engine2 = BacktestEngine(config=mock_config)

@@ -4,6 +4,7 @@ This module provides a centralized configuration system that can be used
 globally throughout the backtesting framework.
 """
 
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -35,8 +36,12 @@ class DataRetrievalConfig(BaseModel):
     )
 
     # Ticker and field configuration
-    tickers: str | list[str] | None = Field(default=None, description="List of ticker symbols")
-    fields: list[str] = Field(default=["close"], description="List of fields to retrieve")
+    tickers: str | list[str] | None = Field(
+        default_factory=lambda: ["SPY"], description="List of ticker symbols"
+    )
+    fields: list[str] = Field(
+        default_factory=lambda: ["close"], description="List of fields to retrieve"
+    )
     vendor_tickers: list[str] | None = Field(
         default=None, description="Vendor-specific ticker symbols"
     )
@@ -339,3 +344,147 @@ def reset_config() -> None:
     """Reset the global configuration to defaults."""
     global _global_config
     _global_config = BacktesterConfig()
+
+
+def _coerce_datetime(value: Any) -> datetime | None:
+    """Attempt to convert the provided value into a datetime for validation."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        # Allow relative keywords that findatapy understands without validation
+        if normalized in {"year", "ytd", "max", "month", "week"}:
+            return None
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return None
+    return None
+
+
+def validate_run_config(config: BacktesterConfig) -> BacktesterConfig:
+    """Validate a backtest configuration and raise if any invalid combinations exist."""
+    errors: list[str] = []
+
+    data = config.data
+    if data is None:
+        errors.append("data configuration is required")
+    else:
+        tickers = data.tickers
+        if isinstance(tickers, str):
+            tickers = [tickers]
+        if not tickers:
+            errors.append("data.tickers must contain at least one symbol")
+
+        start_dt = _coerce_datetime(data.start_date)
+        finish_dt = _coerce_datetime(data.finish_date)
+        if start_dt and finish_dt and finish_dt < start_dt:
+            errors.append(
+                f"data.finish_date ({data.finish_date}) must not be earlier than data.start_date ({data.start_date})"
+            )
+
+    portfolio = config.portfolio
+    if portfolio is None:
+        errors.append("portfolio configuration is required")
+    else:
+        if portfolio.leverage_base <= 0:
+            errors.append("portfolio.leverage_base must be positive")
+        if portfolio.leverage_alpha <= 0:
+            errors.append("portfolio.leverage_alpha must be positive")
+
+    if errors:
+        formatted = "\n - ".join(errors)
+        raise ValueError(f"Invalid backtest configuration:\n - {formatted}")
+
+    return config
+
+
+class BacktestRunConfig:
+    """Builder that produces immutable BacktesterConfig snapshots for each run."""
+
+    _COMPONENT_MODELS = {
+        "data": DataRetrievalConfig,
+        "strategy": StrategyConfig,
+        "portfolio": PortfolioConfig,
+        "execution": ExecutionConfig,
+        "risk": ComprehensiveRiskConfig,
+        "performance": PerformanceConfig,
+    }
+
+    def __init__(self, base_config: BacktesterConfig | None = None) -> None:
+        """Initialise the builder with a deep copy of the provided base config."""
+        base = base_config or get_config()
+        self._base_config = base.model_copy(deep=True)
+        self._overrides: dict[str, dict[str, Any]] = {}
+
+    def with_data_overrides(
+        self, config: DataRetrievalConfig | dict[str, Any] | None = None, **kwargs: Any
+    ) -> "BacktestRunConfig":
+        """Queue overrides for the data component."""
+        return self._apply_override("data", config, kwargs)
+
+    def with_strategy_overrides(
+        self, config: StrategyConfig | dict[str, Any] | None = None, **kwargs: Any
+    ) -> "BacktestRunConfig":
+        """Queue overrides for the strategy component."""
+        return self._apply_override("strategy", config, kwargs)
+
+    def with_portfolio_overrides(
+        self, config: PortfolioConfig | dict[str, Any] | None = None, **kwargs: Any
+    ) -> "BacktestRunConfig":
+        """Queue overrides for the portfolio component."""
+        return self._apply_override("portfolio", config, kwargs)
+
+    def with_execution_overrides(
+        self, config: ExecutionConfig | dict[str, Any] | None = None, **kwargs: Any
+    ) -> "BacktestRunConfig":
+        """Queue overrides for the execution component."""
+        return self._apply_override("execution", config, kwargs)
+
+    def with_risk_overrides(
+        self, config: ComprehensiveRiskConfig | dict[str, Any] | None = None, **kwargs: Any
+    ) -> "BacktestRunConfig":
+        """Queue overrides for the risk component."""
+        return self._apply_override("risk", config, kwargs)
+
+    def with_performance_overrides(
+        self, config: PerformanceConfig | dict[str, Any] | None = None, **kwargs: Any
+    ) -> "BacktestRunConfig":
+        """Queue overrides for the performance component."""
+        return self._apply_override("performance", config, kwargs)
+
+    def _apply_override(
+        self,
+        component: str,
+        config: BaseModel | dict[str, Any] | None,
+        extra_kwargs: dict[str, Any],
+    ) -> "BacktestRunConfig":
+        payload: dict[str, Any] = {}
+        if isinstance(config, BaseModel):
+            payload.update(config.model_dump(exclude_unset=True))
+        elif isinstance(config, dict):
+            payload.update(config)
+        payload.update(extra_kwargs)
+        if payload:
+            self._overrides.setdefault(component, {}).update(payload)
+        return self
+
+    def build(self, *, validate: bool = True) -> BacktesterConfig:
+        """Produce a BacktesterConfig snapshot with the queued overrides applied."""
+        resolved = self._base_config.model_copy(deep=True)
+
+        for component, overrides in self._overrides.items():
+            model_cls = self._COMPONENT_MODELS.get(component)
+            if model_cls is None:
+                continue
+            current = getattr(resolved, component)
+            if current is None:
+                current = model_cls()
+            updated = current.model_copy(update=overrides)
+            setattr(resolved, component, updated)
+
+        if validate:
+            return validate_run_config(resolved)
+        return resolved

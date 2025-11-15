@@ -14,6 +14,15 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from backtester.core.config import (
+    BacktesterConfig,
+    DataRetrievalConfig,
+    ExecutionConfig,
+    PerformanceConfig,
+    PortfolioConfig,
+    StrategyConfig,
+)
+
 # Add the parent directory to the path to import backtester modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -59,68 +68,60 @@ def test_data() -> pd.DataFrame:
 
 
 @pytest.fixture
-def mock_config() -> Mock:
-    """Mock configuration object for testing."""
-    config = Mock()
+def mock_config() -> BacktesterConfig:
+    """Concrete configuration object for testing."""
+    data_config = DataRetrievalConfig(
+        data_source="yahoo",
+        tickers=["SPY"],
+        start_date="2020-01-01",
+        finish_date="2024-01-01",
+        freq="daily",
+    )
+    strategy_config = StrategyConfig(
+        strategy_name="momentum_strategy",
+        ma_short=20,
+        ma_long=50,
+        leverage_base=2.0,
+        leverage_alpha=3.0,
+        base_to_alpha_split=0.2,
+        alpha_to_base_split=0.2,
+        stop_loss_base=0.025,
+        stop_loss_alpha=0.025,
+        take_profit_target=0.10,
+    )
+    portfolio_config = PortfolioConfig(
+        portfolio_strategy_name="kelly_criterion",
+        initial_capital=1000.0,
+        commission_rate=0.001,
+        maintenance_margin=0.25,
+        interest_rate_daily=0.0001,
+        spread_rate=0.0005,
+        slippage_std=0.001,
+        funding_enabled=True,
+        tax_rate=0.15,
+        max_positions=5,
+    )
+    execution_config = ExecutionConfig(
+        commission_rate=0.001,
+        min_commission=1.0,
+        spread=0.0001,
+        slippage_model="normal",
+        slippage_std=0.0005,
+        latency_ms=0.0,
+    )
+    performance_config = PerformanceConfig(
+        risk_free_rate=0.02,
+        benchmark_enabled=False,
+        benchmark_symbol="SPY",
+    )
 
-    # Strategy config
-    config.strategy = Mock()
-    config.strategy.strategy_name = "momentum_strategy"
-    config.strategy.ma_short = 20
-    config.strategy.ma_long = 50
-    config.strategy.leverage_base = 2.0
-    config.strategy.leverage_alpha = 3.0
-    config.strategy.base_to_alpha_split = 0.2
-    config.strategy.alpha_to_base_split = 0.2
-    config.strategy.stop_loss_base = 0.025
-    config.strategy.stop_loss_alpha = 0.025
-    config.strategy.take_profit_target = 0.10
-
-    # Portfolio config
-    config.portfolio = Mock()
-    config.portfolio.portfolio_strategy_name = "kelly_criterion"
-    config.portfolio.initial_capital = 1000.0
-    config.portfolio.commission_rate = 0.001
-    config.portfolio.maintenance_margin = 0.25
-    config.portfolio.interest_rate_daily = 0.0001
-    config.portfolio.spread_rate = 0.0005
-    config.portfolio.slippage_std = 0.001
-    config.portfolio.funding_enabled = True
-    config.portfolio.tax_rate = 0.15
-    config.portfolio.max_positions = 5
-
-    # Data config
-    config.data = Mock()
-    config.data.default_ticker = "SPY"
-    config.data.tickers = ["SPY"]
-    config.data.start_date = "2020-01-01"
-    config.data.end_date = "2024-01-01"
-    config.data.interval = "1d"
-    config.data.use_technical_indicators = False
-
-    # Performance config with real values (not Mocks)
-    config.performance = Mock()
-    config.performance.risk_free_rate = 0.02  # Real float value
-    config.performance.benchmark_enabled = False
-    config.performance.benchmark_symbol = "SPY"
-
-    # Execution config
-    config.execution = Mock()
-    config.execution.commission_rate = 0.001
-    config.execution.min_commission = 1.0
-    config.execution.spread = 0.0001
-    config.execution.slippage_model = "normal"
-    config.execution.slippage_std = 0.0005
-    config.execution.latency_ms = 0.0
-
-    # Risk config
-    config.risk = Mock()
-    config.risk.max_portfolio_risk = 0.02
-    config.risk.max_position_size = 0.10
-    config.risk.max_leverage = 5.0
-    config.risk.max_drawdown = 0.20
-
-    return config
+    return BacktesterConfig(
+        data=data_config,
+        strategy=strategy_config,
+        portfolio=portfolio_config,
+        execution=execution_config,
+        performance=performance_config,
+    )
 
 
 @pytest.fixture
