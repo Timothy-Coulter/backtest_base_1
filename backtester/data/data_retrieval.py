@@ -2,7 +2,7 @@
 
 import os
 import time
-from threading import Lock
+from threading import Event, Lock
 from typing import Any
 
 import pandas as pd
@@ -11,49 +11,27 @@ from findatapy.timeseries import DataQuality
 from findatapy.util import LoggerManager
 
 from backtester.core.config import DataRetrievalConfig
+from backtester.utils.cache_utils import FrameCache
+
+_DATA_CACHE = FrameCache()
 
 
-class _InMemoryDataCache:
-    """Thread-safe in-memory cache keyed off the data retrieval parameters."""
-
-    def __init__(self) -> None:
-        self._frames: dict[tuple[Any, ...], pd.DataFrame] = {}
-        self._lock = Lock()
-
-    def build_key(self, config: DataRetrievalConfig) -> tuple[Any, ...]:
-        tickers = config.tickers
-        if isinstance(tickers, str):
-            tickers_tuple: tuple[Any, ...] = (tickers,)
-        elif tickers is None:
-            tickers_tuple = ()
-        else:
-            tickers_tuple = tuple(tickers)
-
-        return (
-            config.data_source,
-            tickers_tuple,
-            str(config.start_date),
-            str(config.finish_date),
-            str(config.freq),
-        )
-
-    def get(self, key: tuple[Any, ...]) -> pd.DataFrame | None:
-        with self._lock:
-            frame = self._frames.get(key)
-        if frame is None:
-            return None
-        return frame.copy(deep=True)
-
-    def set(self, key: tuple[Any, ...], frame: pd.DataFrame) -> None:
-        with self._lock:
-            self._frames[key] = frame.copy(deep=True)
-
-    def clear(self) -> None:
-        with self._lock:
-            self._frames.clear()
-
-
-_DATA_CACHE = _InMemoryDataCache()
+def _build_cache_key(config: DataRetrievalConfig) -> tuple[Any, ...]:
+    tickers = config.tickers
+    if isinstance(tickers, str):
+        tickers_tuple: tuple[Any, ...] = (tickers,)
+    elif tickers is None:
+        tickers_tuple = ()
+    else:
+        tickers_tuple = tuple(tickers)
+    return (
+        config.data_source,
+        tickers_tuple,
+        str(config.start_date),
+        str(config.finish_date),
+        str(config.freq),
+        tuple(config.fields),
+    )
 
 
 class DataRetrieval:
@@ -75,6 +53,8 @@ class DataRetrieval:
         self.market = Market(market_data_generator=MarketDataGenerator())
         self.data_quality = DataQuality()
         self.logger = LoggerManager().getLogger(__name__)
+        self._cache_lock = Lock()
+        self._inflight_requests: dict[tuple[Any, ...], Event] = {}
 
         # Load API keys from environment if not provided in config
         self._populate_api_keys(self.config)
@@ -219,19 +199,48 @@ class DataRetrieval:
         """
         # First try to load from cache
         effective_config = self._resolve_config(config_override)
-        cache_key = _DATA_CACHE.build_key(effective_config)
+        if effective_config.cache_max_entries is not None:
+            _DATA_CACHE.configure(max_entries=effective_config.cache_max_entries)
+        cache_key = _build_cache_key(effective_config)
         cached_frame = _DATA_CACHE.get(cache_key)
         if cached_frame is not None:
             self.logger.info("Returning data from in-memory cache for key %s", cache_key)
             return cached_frame
 
-        cached_data = self._load_from_cache_for_config(effective_config)
-        if cached_data is None:
-            self.logger.info("Cache load failed, attempting download from data source...")
-            cached_data = self._download_data_for_config(effective_config)
+        wait_event: Event | None = None
+        with self._cache_lock:
+            cached_frame = _DATA_CACHE.get(cache_key)
+            if cached_frame is not None:
+                self.logger.info("Returning data from in-memory cache for key %s", cache_key)
+                return cached_frame
+            wait_event = self._inflight_requests.get(cache_key)
+            if wait_event is None:
+                wait_event = Event()
+                self._inflight_requests[cache_key] = wait_event
+                fetch_owner = True
+            else:
+                fetch_owner = False
 
-        _DATA_CACHE.set(cache_key, cached_data)
-        return cached_data
+        if not fetch_owner:
+            wait_event.wait()
+            cached_frame = _DATA_CACHE.get(cache_key)
+            if cached_frame is None:
+                raise RuntimeError("expected cached frame after inflight fetch")
+            return cached_frame
+
+        try:
+            cached_data = self._load_from_cache_for_config(effective_config)
+            if cached_data is None:
+                self.logger.info("Cache load failed, attempting download from data source...")
+                cached_data = self._download_data_for_config(effective_config)
+
+            _DATA_CACHE.set(cache_key, cached_data, ttl=effective_config.cache_ttl_seconds)
+            return cached_data
+        finally:
+            with self._cache_lock:
+                event = self._inflight_requests.pop(cache_key, None)
+                if event is not None:
+                    event.set()
 
     def validate_data_quality(
         self,

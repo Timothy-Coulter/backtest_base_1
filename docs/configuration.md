@@ -27,6 +27,13 @@ Available helpers: `with_data_overrides`, `with_strategy_overrides`, `with_portf
 `with_execution_overrides`, `with_risk_overrides`, and `with_performance_overrides`. Each helper
 accepts either keyword pairs or an existing component model and returns the builder for chaining.
 
+The CLI entrypoint (`python main.py`) and the convenience script (`python scripts/run_backtest.py`)
+use the same builder under the hood. Flags/environment variables (`--ticker`, `--start-date`,
+`--date-preset`, `--freq`, `--strategy-name`, `--strategy-ma-short`, `BACKTEST_TICKERS`,
+`BACKTEST_START_DATE`, etc.) are applied through `BacktestRunConfig` so every run receives a
+validated snapshot. Set `BACKTEST_DRY_RUN=1` (or `--dry-run`) when you only want to materialise the
+configuration without streaming data.
+
 ## Ownership
 
 - **Data Retrieval**: `DataRetrievalConfig` describes symbols, date ranges, frequencies, API keys,
@@ -37,6 +44,27 @@ accepts either keyword pairs or an existing component model and returns the buil
 - **Performance**: Only `PerformanceAnalyzer` should consume `PerformanceConfig`.
 
 To preserve separation of concerns, components receive only the relevant slice of the snapshot and should never rewrite it.
+
+### Read-only Component Views
+
+Downstream components no longer receive the mutable `BacktesterConfig` object. Instead, helper
+functions in `backtester.core.config` build frozen dataclasses:
+
+- `build_data_config_view`, `build_portfolio_config_view`, `build_execution_config_view`,
+  and `build_risk_config_view` yield immutable snapshots that mirror the active run.
+- `GeneralPortfolio`, `SimulatedBroker`, `RiskControlManager`, and the strategy orchestrator
+  only consume these views, so attempts to mutate configuration at runtime now raise
+  `dataclasses.FrozenInstanceError`.
+
+This guarantees that once a backtest starts, every component sees the exact same inputs that were
+logged via the configuration diff helper.
+
+### Config Diff Logging
+
+`BacktestRunConfig` snapshots are compared using `backtester.core.config_diff`. On engine
+initialisation the diff between the global defaults and the CLI/programmatic overrides is logged,
+and each call to `BacktestEngine.run_backtest` logs an INFO-level summary whenever per-run overrides
+are applied. Combine this with the `run_id` logging context for reproducible audits.
 
 ## Validation
 
@@ -54,4 +82,7 @@ The validator runs automatically when `BacktestRunConfig.build()` is invoked, bu
   callers can temporarily change tickers, dates, or frequencies without mutating the base handler.
 - An in-memory cache is keyed by `(data_source, tickers, start, end, interval)` to avoid re-fetching
   identical frames during iterative workflows.
+- TTL (`DataRetrievalConfig.cache_ttl_seconds`) and max-size (`DataRetrievalConfig.cache_max_entries`)
+  controls feed into the shared cache (`backtester.utils.cache_utils.FrameCache`). Tune them per-run
+  or use the defaults (5 minutes, 256 entries) for most workflows.
 - The helper `clear_data_retrieval_cache()` exists for tests or scenarios where a hard refresh is required.

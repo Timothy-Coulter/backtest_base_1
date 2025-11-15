@@ -11,7 +11,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from backtester.core.config import SimulatedBrokerConfig
+from backtester.core.config import ExecutionConfigView, SimulatedBrokerConfig
 from backtester.core.event_bus import EventBus, EventPriority
 from backtester.core.events import OrderEvent as BusOrderEvent
 from backtester.core.events import OrderSide as EventOrderSide
@@ -27,6 +27,7 @@ class SimulatedBroker:
     def __init__(
         self,
         config: SimulatedBrokerConfig | None = None,
+        config_view: ExecutionConfigView | None = None,
         commission_rate: float | None = None,
         min_commission: float | None = None,
         spread: float | None = None,
@@ -42,6 +43,7 @@ class SimulatedBroker:
 
         Args:
             config: SimulatedBrokerConfig instance. If provided, other parameters are ignored.
+            config_view: Immutable execution configuration snapshot that takes precedence over config.
             commission_rate: Commission rate for trades (as decimal) - deprecated, use config
             min_commission: Minimum commission per trade - deprecated, use config
             spread: Bid-ask spread (as decimal) - deprecated, use config
@@ -57,8 +59,17 @@ class SimulatedBroker:
         self.event_bus = event_bus
         self.risk_manager = risk_manager
 
-        # Use config if provided, otherwise use individual parameters
-        if config is not None:
+        self._config_view = config_view
+
+        # Use config view first, fallback to config or explicit parameters
+        if config_view is not None:
+            self.commission_rate = config_view.commission_rate
+            self.min_commission = config_view.min_commission
+            self.spread = config_view.spread
+            self.slippage_model = config_view.slippage_model
+            self.slippage_std = config_view.slippage_std
+            self.latency_ms = config_view.latency_ms
+        elif config is not None:
             # Use config values - define attributes once
             self.commission_rate = config.commission_rate
             self.min_commission = config.min_commission

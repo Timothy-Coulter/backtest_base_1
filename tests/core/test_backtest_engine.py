@@ -5,6 +5,7 @@ all components of the trading system including data loading, strategy execution,
 portfolio management, and performance calculation.
 """
 
+from dataclasses import FrozenInstanceError
 from typing import Any
 from unittest.mock import Mock, patch
 
@@ -198,6 +199,17 @@ class TestBacktestEngine:
         assert 'win_rate' in result
         assert isinstance(result['total_return'], float)
 
+    def test_portfolio_config_view_is_read_only(self, mock_config: BacktesterConfig) -> None:
+        """Attempting to mutate the portfolio config view should raise."""
+        engine = BacktestEngine(config=mock_config)
+        engine.create_portfolio()
+        assert engine.current_portfolio is not None
+        view = getattr(engine.current_portfolio, "_config_view", None)
+        assert view is not None
+        mutable_view: Any = view
+        with pytest.raises(FrozenInstanceError):
+            mutable_view.max_positions = 1
+
     def test_handle_exception_gracefully(
         self, test_data: pd.DataFrame, mock_config: BacktesterConfig
     ) -> None:
@@ -308,7 +320,12 @@ class TestBacktestEngine:
             result = engine.run_backtest(ticker, start_date, end_date, interval)
 
             assert 'performance' in result
-            mock_load.assert_called_once_with(ticker, start_date, end_date, interval)
+            mock_load.assert_called_once_with(apply_overrides=False)
+            assert engine.config.data is not None
+            assert engine.config.data.tickers == [ticker]
+            assert engine.config.data.start_date == start_date
+            assert engine.config.data.finish_date == end_date
+            assert engine.config.data.freq == interval
 
     def test_memory_efficiency(
         self, test_data: pd.DataFrame, mock_config: BacktesterConfig

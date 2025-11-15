@@ -1,5 +1,7 @@
 """Caching utilities for performance optimization."""
 
+from __future__ import annotations
+
 import contextlib
 import hashlib
 import os
@@ -7,7 +9,11 @@ import pickle
 import tempfile
 import threading
 import time
+from collections import OrderedDict
+from collections.abc import Hashable
 from typing import Any
+
+import pandas as pd
 
 
 class CacheUtils:
@@ -228,3 +234,69 @@ class CacheUtils:
             del self._memory_cache[cache_key]
         if cache_key in self._memory_cache_times:
             del self._memory_cache_times[cache_key]
+
+
+class FrameCache:
+    """Thread-safe in-memory cache optimized for pandas DataFrames."""
+
+    def __init__(self, max_entries: int = 256) -> None:
+        """Create a cache with the specified capacity."""
+        self._lock = threading.RLock()
+        self._frames: OrderedDict[Hashable, tuple[pd.DataFrame, float | None]] = OrderedDict()
+        self._max_entries = max(1, int(max_entries))
+
+    def configure(self, *, max_entries: int | None = None) -> None:
+        """Update cache capacity limit."""
+        if max_entries is None:
+            return
+        with self._lock:
+            self._max_entries = max(1, int(max_entries))
+            self._evict_if_needed()
+
+    def get(self, key: Hashable) -> pd.DataFrame | None:
+        """Retrieve a cached frame copy."""
+        with self._lock:
+            entry = self._frames.get(key)
+            if entry is None:
+                return None
+            frame, expire_at = entry
+            if expire_at is not None and time.time() >= expire_at:
+                del self._frames[key]
+                return None
+            self._frames.move_to_end(key)
+            return frame.copy(deep=True)
+
+    def set(self, key: Hashable, frame: pd.DataFrame, ttl: float | None = None) -> None:
+        """Store a frame in the cache."""
+        expire_at = time.time() + ttl if ttl else None
+        with self._lock:
+            self._frames[key] = (frame.copy(deep=True), expire_at)
+            self._frames.move_to_end(key)
+            self._evict_if_needed()
+
+    def invalidate(self, key: Hashable) -> None:
+        """Remove a cached entry."""
+        with self._lock:
+            self._frames.pop(key, None)
+
+    def clear(self) -> None:
+        """Remove all entries."""
+        with self._lock:
+            self._frames.clear()
+
+    def stats(self) -> dict[str, Any]:
+        """Return cache statistics for diagnostics."""
+        with self._lock:
+            expirations = [expiry for _, (_, expiry) in self._frames.items()]
+            return {
+                'size': len(self._frames),
+                'max_entries': self._max_entries,
+                'expiring_entries': sum(1 for value in expirations if value is not None),
+            }
+
+    # ------------------------------------------------------------------#
+    # Internal helpers
+    # ------------------------------------------------------------------#
+    def _evict_if_needed(self) -> None:
+        while len(self._frames) > self._max_entries:
+            self._frames.popitem(last=False)

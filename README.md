@@ -24,6 +24,28 @@ from backtester.main import run_backtest
 results = run_backtest()
 ```
 
+### Command-Line Overrides
+
+The entrypoint now accepts runtime overrides so you can iterate without touching Python code:
+
+```bash
+uv run python main.py --ticker AAPL --start-date 2023-01-01 --freq 1h --dry-run
+```
+
+Key flags:
+
+- `--ticker`/`--tickers` – specify one or more symbols (repeatable)
+- `--start-date`, `--finish-date`, `--date-preset` – explicit or relative date windows
+- `--freq` – override the data frequency (e.g. `daily`, `1h`)
+- `--strategy-name`, `--strategy-ma-short`, `--strategy-ma-long` – momentum strategy knobs
+- `--dry-run` – validate the configuration without invoking the backtest loop
+
+Environment variables mirror the flags (`BACKTEST_TICKERS`, `BACKTEST_START_DATE`,
+`BACKTEST_DATE_PRESET`, `BACKTEST_FREQ`, `BACKTEST_STRATEGY_NAME`, etc.) and the helper
+`BACKTEST_DRY_RUN=1` forces dry-run mode for automation. Power users can also call
+`python scripts/run_backtest.py ...` to execute the same workflow inside scripted
+pipelines or CI.
+
 ## Architecture Overview
 
 - **Event-driven core:** The `EventBus` fan-outs market, signal, order, and risk
@@ -91,6 +113,9 @@ risk_config = ComprehensiveRiskConfig(
 risk_manager = RiskControlManager(config=risk_config, logger=engine.logger, event_bus=engine.event_bus)
 engine.current_risk_manager = risk_manager
 ```
+
+For a walkthrough on building multiple `BacktestRunConfig` snapshots (CLI and code-driven),
+see `docs/run_config_tutorial.md`.
 
 ## Event Payload Contract
 
@@ -176,6 +201,9 @@ uv run ruff check --fix .
 
 # Type checking (mypy)
 uv run mypy .
+
+# Validate docs/ links
+uv run python scripts/check_docs.py
 ```
 
 ### Testing

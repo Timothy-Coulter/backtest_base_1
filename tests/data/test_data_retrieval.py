@@ -1,7 +1,9 @@
 """Unit tests for DataRetrieval classes."""
 
 import logging
+import time
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import Mock, patch
 
 import numpy as np
@@ -489,6 +491,80 @@ class TestDataRetrieval:
 
             # First call hits persistent cache once, override triggers another fetch
             assert mock_market.fetch_market.call_count == 2
+
+    def test_cache_ttl_expires_entries(
+        self,
+        sample_config: DataRetrievalConfig,
+        sample_market_data: pd.DataFrame,
+        mock_market: Mock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Entries should expire when the TTL is exceeded."""
+        sample_config.cache_ttl_seconds = 0.25
+        with (
+            patch('backtester.data.data_retrieval.Market', return_value=mock_market),
+            patch('backtester.data.data_retrieval.DataQuality'),
+        ):
+            retrieval = DataRetrieval(sample_config)
+            mock_market.fetch_market.return_value = sample_market_data
+
+            anchor = time.time()
+
+            current = {'value': anchor}
+
+            def fake_time() -> float:
+                return current['value']
+
+            monkeypatch.setattr('backtester.data.data_retrieval.time.time', fake_time)
+
+            retrieval.get_data(sample_config)
+            assert mock_market.fetch_market.call_count == 1
+
+            current['value'] = anchor + 1.0
+            retrieval.get_data(sample_config)
+            assert mock_market.fetch_market.call_count == 2
+
+    def test_cache_max_entries_triggers_eviction(
+        self,
+        sample_config: DataRetrievalConfig,
+        sample_market_data: pd.DataFrame,
+        mock_market: Mock,
+    ) -> None:
+        """Limiting the cache size should evict the oldest keys."""
+        sample_config.cache_max_entries = 1
+        with (
+            patch('backtester.data.data_retrieval.Market', return_value=mock_market),
+            patch('backtester.data.data_retrieval.DataQuality'),
+        ):
+            retrieval = DataRetrieval(sample_config)
+            mock_market.fetch_market.return_value = sample_market_data
+
+            alt_config = sample_config.model_copy()
+            alt_config.tickers = ['QQQ']
+
+            retrieval.get_data(sample_config)
+            retrieval.get_data(alt_config)
+            retrieval.get_data(sample_config)
+            assert mock_market.fetch_market.call_count == 3
+
+    def test_get_data_thread_safety(
+        self,
+        sample_config: DataRetrievalConfig,
+        sample_market_data: pd.DataFrame,
+        mock_market: Mock,
+    ) -> None:
+        """Concurrent invocations should not trigger redundant downloads."""
+        with (
+            patch('backtester.data.data_retrieval.Market', return_value=mock_market),
+            patch('backtester.data.data_retrieval.DataQuality'),
+        ):
+            retrieval = DataRetrieval(sample_config)
+            mock_market.fetch_market.return_value = sample_market_data
+
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                list(executor.map(lambda _: retrieval.get_data(sample_config), range(5)))
+
+            assert mock_market.fetch_market.call_count == 1
 
     def test_get_data_with_validation_with_issues(
         self,

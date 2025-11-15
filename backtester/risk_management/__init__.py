@@ -4,6 +4,8 @@ This module provides comprehensive risk management functionality including
 stop-loss, take-profit, position sizing, risk limits, monitoring, and metrics calculation.
 """
 
+from __future__ import annotations
+
 # Configuration classes
 from backtester.risk_management.component_configs.comprehensive_risk_config import (
     ComprehensiveRiskConfig,
@@ -16,7 +18,6 @@ from backtester.risk_management.component_configs.take_profit_config import Take
 
 # Core risk management classes
 from backtester.risk_management.position_sizing import PositionSizer
-from backtester.risk_management.risk_control_manager import RiskControlManager
 from backtester.risk_management.risk_limits import RiskLimits
 from backtester.risk_management.risk_metrics_calculator import RiskMetricsCalculator
 from backtester.risk_management.risk_monitor import RiskMonitor
@@ -53,3 +54,12 @@ __all__ = [
     'RiskMetric',
     'RiskSignal',
 ]
+
+
+def __getattr__(name: str) -> object:
+    """Lazy-load heavy modules to avoid circular imports during package init."""
+    if name == "RiskControlManager":
+        from backtester.risk_management.risk_control_manager import RiskControlManager
+
+        return RiskControlManager
+    raise AttributeError(name)

@@ -4,10 +4,16 @@ This module provides a centralized configuration system that can be used
 globally throughout the backtesting framework.
 """
 
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime
+from types import MappingProxyType
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from typing_extensions import Self
 
 from backtester.risk_management.component_configs.comprehensive_risk_config import (
     ComprehensiveRiskConfig,
@@ -84,6 +90,16 @@ class DataRetrievalConfig(BaseModel):
     # Cache behavior
     push_to_cache: bool = Field(default=True, description="Whether to push data to cache")
     overrides: dict[str, Any] = Field(default_factory=dict, description="Data overrides")
+    cache_ttl_seconds: float | None = Field(
+        default=300.0,
+        description="In-memory cache time-to-live per entry in seconds",
+        ge=0.0,
+    )
+    cache_max_entries: int | None = Field(
+        default=256,
+        description="Maximum number of cached frames kept in memory",
+        ge=1,
+    )
 
 
 class StrategyConfig(BaseModel):
@@ -401,6 +417,140 @@ def validate_run_config(config: BacktesterConfig) -> BacktesterConfig:
     return config
 
 
+# ---------------------------------------------------------------------------#
+# Immutable config views
+# ---------------------------------------------------------------------------#
+
+
+def _as_tuple(value: str | Sequence[str] | None) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        return (value,)
+    return tuple(value)
+
+
+def _freeze_mapping(payload: Mapping[str, Any] | None) -> Mapping[str, Any]:
+    if payload is None:
+        return MappingProxyType({})
+    return MappingProxyType(dict(payload))
+
+
+@dataclass(frozen=True, slots=True)
+class DataConfigView:
+    """Immutable view for data configuration passed to downstream readers."""
+
+    data_source: str
+    tickers: tuple[str, ...]
+    start_date: Any
+    finish_date: Any | None
+    freq: str
+    fields: tuple[str, ...]
+    vendor_tickers: tuple[str, ...]
+    vendor_fields: tuple[str, ...]
+    cache_ttl_seconds: float | None
+    cache_max_entries: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class PortfolioConfigView:
+    """Immutable portfolio configuration slice."""
+
+    initial_capital: float
+    commission_rate: float
+    interest_rate_daily: float
+    spread_rate: float
+    slippage_std: float
+    funding_enabled: bool
+    tax_rate: float
+    max_positions: int
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionConfigView:
+    """Immutable execution/broker configuration slice."""
+
+    commission_rate: float
+    min_commission: float
+    spread: float
+    slippage_model: str
+    slippage_std: float
+    latency_ms: float
+
+
+@dataclass(frozen=True, slots=True)
+class RiskConfigView:
+    """Immutable wrapper around comprehensive risk configuration."""
+
+    _payload: Mapping[str, Any]
+
+    @classmethod
+    def from_model(cls, model: ComprehensiveRiskConfig) -> Self:
+        """Create a view from an existing ComprehensiveRiskConfig."""
+        return cls(_payload=_freeze_mapping(model.model_dump(mode="python")))
+
+    def materialize(self) -> ComprehensiveRiskConfig:
+        """Return a deep copy of the underlying configuration."""
+        return ComprehensiveRiskConfig(**dict(self._payload))
+
+
+def build_data_config_view(config: BacktesterConfig) -> DataConfigView:
+    """Return an immutable data configuration view for downstream consumers."""
+    assert config.data is not None
+    data = config.data
+    return DataConfigView(
+        data_source=data.data_source,
+        tickers=_as_tuple(data.tickers) or ("SPY",),
+        start_date=data.start_date,
+        finish_date=data.finish_date,
+        freq=data.freq,
+        fields=tuple(data.fields),
+        vendor_tickers=_as_tuple(data.vendor_tickers),
+        vendor_fields=_as_tuple(data.vendor_fields),
+        cache_ttl_seconds=data.cache_ttl_seconds,
+        cache_max_entries=data.cache_max_entries,
+    )
+
+
+def build_portfolio_config_view(config: BacktesterConfig) -> PortfolioConfigView:
+    """Return an immutable portfolio configuration view."""
+    assert config.portfolio is not None
+    portfolio = config.portfolio
+    funding_enabled = (
+        bool(portfolio.funding_enabled) if portfolio.funding_enabled is not None else True
+    )
+    return PortfolioConfigView(
+        initial_capital=float(portfolio.initial_capital or 100.0),
+        commission_rate=float(portfolio.commission_rate or 0.001),
+        interest_rate_daily=float(portfolio.interest_rate_daily or 0.00025),
+        spread_rate=float(portfolio.spread_rate or 0.0002),
+        slippage_std=float(portfolio.slippage_std or 0.0005),
+        funding_enabled=funding_enabled,
+        tax_rate=float(portfolio.tax_rate or 0.45),
+        max_positions=int(portfolio.max_positions or 10),
+    )
+
+
+def build_execution_config_view(config: BacktesterConfig) -> ExecutionConfigView:
+    """Return an immutable execution configuration view."""
+    assert config.execution is not None
+    execution = config.execution
+    return ExecutionConfigView(
+        commission_rate=float(execution.commission_rate or 0.001),
+        min_commission=float(execution.min_commission or 1.0),
+        spread=float(execution.spread or 0.0001),
+        slippage_model=str(execution.slippage_model or "normal"),
+        slippage_std=float(execution.slippage_std or 0.0005),
+        latency_ms=float(execution.latency_ms or 0.0),
+    )
+
+
+def build_risk_config_view(config: BacktesterConfig) -> RiskConfigView:
+    """Return an immutable risk configuration view."""
+    assert config.risk is not None
+    return RiskConfigView.from_model(config.risk)
+
+
 class BacktestRunConfig:
     """Builder that produces immutable BacktesterConfig snapshots for each run."""
 
@@ -421,37 +571,37 @@ class BacktestRunConfig:
 
     def with_data_overrides(
         self, config: DataRetrievalConfig | dict[str, Any] | None = None, **kwargs: Any
-    ) -> "BacktestRunConfig":
+    ) -> BacktestRunConfig:
         """Queue overrides for the data component."""
         return self._apply_override("data", config, kwargs)
 
     def with_strategy_overrides(
         self, config: StrategyConfig | dict[str, Any] | None = None, **kwargs: Any
-    ) -> "BacktestRunConfig":
+    ) -> BacktestRunConfig:
         """Queue overrides for the strategy component."""
         return self._apply_override("strategy", config, kwargs)
 
     def with_portfolio_overrides(
         self, config: PortfolioConfig | dict[str, Any] | None = None, **kwargs: Any
-    ) -> "BacktestRunConfig":
+    ) -> BacktestRunConfig:
         """Queue overrides for the portfolio component."""
         return self._apply_override("portfolio", config, kwargs)
 
     def with_execution_overrides(
         self, config: ExecutionConfig | dict[str, Any] | None = None, **kwargs: Any
-    ) -> "BacktestRunConfig":
+    ) -> BacktestRunConfig:
         """Queue overrides for the execution component."""
         return self._apply_override("execution", config, kwargs)
 
     def with_risk_overrides(
         self, config: ComprehensiveRiskConfig | dict[str, Any] | None = None, **kwargs: Any
-    ) -> "BacktestRunConfig":
+    ) -> BacktestRunConfig:
         """Queue overrides for the risk component."""
         return self._apply_override("risk", config, kwargs)
 
     def with_performance_overrides(
         self, config: PerformanceConfig | dict[str, Any] | None = None, **kwargs: Any
-    ) -> "BacktestRunConfig":
+    ) -> BacktestRunConfig:
         """Queue overrides for the performance component."""
         return self._apply_override("performance", config, kwargs)
 
@@ -460,7 +610,7 @@ class BacktestRunConfig:
         component: str,
         config: BaseModel | dict[str, Any] | None,
         extra_kwargs: dict[str, Any],
-    ) -> "BacktestRunConfig":
+    ) -> BacktestRunConfig:
         payload: dict[str, Any] = {}
         if isinstance(config, BaseModel):
             payload.update(config.model_dump(exclude_unset=True))

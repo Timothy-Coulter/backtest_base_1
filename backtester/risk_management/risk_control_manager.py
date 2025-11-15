@@ -10,6 +10,7 @@ from typing import Any
 
 import pandas as pd
 
+from backtester.core.config import RiskConfigView
 from backtester.core.event_bus import EventBus, EventFilter
 from backtester.core.events import PortfolioUpdateEvent, create_risk_alert_event
 from backtester.risk_management.component_configs.comprehensive_risk_config import (
@@ -30,6 +31,7 @@ class RiskControlManager:
         config: ComprehensiveRiskConfig | None = None,
         logger: logging.Logger | None = None,
         event_bus: EventBus | None = None,
+        config_view: RiskConfigView | None = None,
     ) -> None:
         """Initialize the risk control manager.
 
@@ -37,8 +39,19 @@ class RiskControlManager:
             config: ComprehensiveRiskConfig with risk control parameters
             logger: Optional logger instance
             event_bus: Optional event bus for publishing/subscribing to events
+            config_view: Frozen configuration snapshot that supersedes ``config`` when provided
         """
-        self.config: ComprehensiveRiskConfig = config or ComprehensiveRiskConfig()
+        if config_view is not None:
+            resolved_config = config_view.materialize()
+            self._config_view = config_view
+        elif config is not None:
+            resolved_config = config.model_copy(deep=True)
+            self._config_view = RiskConfigView.from_model(resolved_config)
+        else:
+            resolved_config = ComprehensiveRiskConfig()
+            self._config_view = RiskConfigView.from_model(resolved_config)
+
+        self.config: ComprehensiveRiskConfig = resolved_config
         self.logger: logging.Logger = logger or logging.getLogger(__name__)
         self.event_bus = event_bus
         self._portfolio_subscription_id: str | None = None

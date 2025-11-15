@@ -9,6 +9,7 @@ from typing import Any
 
 import pandas as pd
 
+from backtester.core.config import PortfolioConfigView
 from backtester.core.event_bus import EventBus
 from backtester.core.interfaces import RiskManagerProtocol
 from backtester.portfolio.base_portfolio import BasePortfolio
@@ -36,6 +37,7 @@ class GeneralPortfolio(BasePortfolio):
         event_bus: EventBus | None = None,
         portfolio_id: str | None = None,
         risk_manager: RiskManagerProtocol | None = None,
+        config_view: PortfolioConfigView | None = None,
     ) -> None:
         """Initialize the general portfolio.
 
@@ -52,7 +54,18 @@ class GeneralPortfolio(BasePortfolio):
             event_bus: Optional event bus used to broadcast updates
             portfolio_id: Identifier for emitted portfolio events
             risk_manager: Optional risk manager that centralizes risk checks
+            config_view: Frozen configuration view applied to the portfolio
         """
+        if config_view is not None:
+            initial_capital = config_view.initial_capital
+            commission_rate = config_view.commission_rate
+            interest_rate_daily = config_view.interest_rate_daily
+            spread_rate = config_view.spread_rate
+            slippage_std = config_view.slippage_std
+            funding_enabled = config_view.funding_enabled
+            tax_rate = config_view.tax_rate
+            max_positions = config_view.max_positions
+
         super().__init__(
             initial_capital=initial_capital,
             commission_rate=commission_rate,
@@ -75,6 +88,7 @@ class GeneralPortfolio(BasePortfolio):
         self.total_slippage: float = 0.0
         self.positions: dict[str, Position] = {}
         self.risk_manager = risk_manager
+        self._config_view = config_view
 
         self.logger.info(
             f"Initialized GeneralPortfolio with ${initial_capital:.2f} capital, max {max_positions} positions"

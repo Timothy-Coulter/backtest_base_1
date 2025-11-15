@@ -13,8 +13,19 @@ from typing import Any
 
 import matplotlib.pyplot as plt
 import pandas as pd
+from pydantic import BaseModel
 
-from backtester.core.config import BacktesterConfig, BacktestRunConfig, get_config
+from backtester.core.config import (
+    BacktesterConfig,
+    BacktestRunConfig,
+    PortfolioConfig,
+    StrategyConfig,
+    build_execution_config_view,
+    build_portfolio_config_view,
+    build_risk_config_view,
+    get_config,
+)
+from backtester.core.config_diff import diff_configs, format_config_diff
 from backtester.core.event_bus import EventBus, EventFilter
 from backtester.core.event_handlers import OrderHandler, PortfolioHandler, SignalHandler
 from backtester.core.events import (
@@ -126,8 +137,11 @@ class BacktestEngine:
             event_bus: Optional shared event bus instance
             strategy_orchestrator: Optional strategy orchestrator instance
         """
-        base_config = config or get_config()
-        self.config: BacktesterConfig = BacktestRunConfig(base_config).build()
+        defaults_snapshot = get_config()
+        self._global_defaults = defaults_snapshot.model_copy(deep=True)
+        source_config = config or defaults_snapshot
+        self._base_config = BacktestRunConfig(source_config).build()
+        self.config: BacktesterConfig = self._base_config.model_copy(deep=True)
         self.run_id = uuid.uuid4().hex[:8]
         if logger is not None:
             self.logger = bind_logger_context(logger, run_id=self.run_id)
@@ -188,6 +202,7 @@ class BacktestEngine:
         self.performance_analyzer = PerformanceAnalyzer(
             self.config.performance.risk_free_rate, self.logger
         )
+        self._log_startup_config_diff()
 
         # Initialize basic components - will be created when needed
         self.portfolio: GeneralPortfolio | None = None
@@ -217,6 +232,8 @@ class BacktestEngine:
         start_date: str | None = None,
         end_date: str | None = None,
         interval: str | None = None,
+        *,
+        apply_overrides: bool = True,
     ) -> pd.DataFrame:
         """Load market data for backtesting.
 
@@ -225,24 +242,20 @@ class BacktestEngine:
             start_date: Start date
             end_date: End date
             interval: Data frequency
+            apply_overrides: When False, assumes configuration has already been prepared
 
         Returns:
             Loaded market data
         """
-        data_overrides: dict[str, Any] = {}
-        if ticker is not None:
-            data_overrides["tickers"] = [ticker]
-        if start_date is not None:
-            data_overrides["start_date"] = start_date
-        if end_date is not None:
-            data_overrides["finish_date"] = end_date
-        if interval is not None:
-            data_overrides["freq"] = interval
-
-        builder = BacktestRunConfig(self.config)
-        if data_overrides:
-            builder.with_data_overrides(**data_overrides)
-        run_config = builder.build()
+        data_overrides = self._collect_data_overrides(ticker, start_date, end_date, interval)
+        if apply_overrides:
+            run_config = self._prepare_run_config(data_overrides=data_overrides)
+        else:
+            if data_overrides:
+                raise ValueError(
+                    "Data overrides were supplied but apply_overrides=False was requested."
+                )
+            run_config = self.config
         assert run_config.data is not None
         target_data_config = run_config.data
         tickers_field = target_data_config.tickers or ["SPY"]
@@ -349,63 +362,21 @@ class BacktestEngine:
         assert self.config.portfolio is not None
         assert self.config.strategy is not None
 
-        # Create portfolio based on configuration
-        # For now, use GeneralPortfolio with basic parameters
-        initial_capital = (
-            float(self.config.portfolio.initial_capital)
-            if self.config.portfolio.initial_capital is not None
-            else 100.0
-        )
-        commission_rate = (
-            float(self.config.portfolio.commission_rate)
-            if self.config.portfolio.commission_rate is not None
-            else 0.001
-        )
-        interest_rate_daily = (
-            float(self.config.portfolio.interest_rate_daily)
-            if self.config.portfolio.interest_rate_daily is not None
-            else 0.00025
-        )
-        spread_rate = (
-            float(self.config.portfolio.spread_rate)
-            if self.config.portfolio.spread_rate is not None
-            else 0.0002
-        )
-        slippage_std = (
-            float(self.config.portfolio.slippage_std)
-            if self.config.portfolio.slippage_std is not None
-            else 0.0005
-        )
-        funding_enabled = (
-            bool(self.config.portfolio.funding_enabled)
-            if self.config.portfolio.funding_enabled is not None
-            else True
-        )
-        tax_rate = (
-            float(self.config.portfolio.tax_rate)
-            if self.config.portfolio.tax_rate is not None
-            else 0.45
-        )
-        max_positions = (
-            int(self.config.portfolio.max_positions)
-            if hasattr(self.config.portfolio, 'max_positions')
-            and self.config.portfolio.max_positions is not None
-            else 10
-        )
-
+        portfolio_view = build_portfolio_config_view(self.config)
         self.current_portfolio = GeneralPortfolio(
-            initial_capital=initial_capital,
-            commission_rate=commission_rate,
-            interest_rate_daily=interest_rate_daily,
-            spread_rate=spread_rate,
-            slippage_std=slippage_std,
-            funding_enabled=funding_enabled,
-            tax_rate=tax_rate,
-            max_positions=max_positions,
+            initial_capital=portfolio_view.initial_capital,
+            commission_rate=portfolio_view.commission_rate,
+            interest_rate_daily=portfolio_view.interest_rate_daily,
+            spread_rate=portfolio_view.spread_rate,
+            slippage_std=portfolio_view.slippage_std,
+            funding_enabled=portfolio_view.funding_enabled,
+            tax_rate=portfolio_view.tax_rate,
+            max_positions=portfolio_view.max_positions,
             logger=self.logger,
             event_bus=self.event_bus,
             portfolio_id=self._portfolio_identifier,
             risk_manager=self.current_risk_manager,
+            config_view=portfolio_view,
         )
 
         # Update portfolio parameters if provided
@@ -480,17 +451,9 @@ class BacktestEngine:
         Returns:
             Broker instance
         """
+        execution_view = build_execution_config_view(self.config)
         self.current_broker = SimulatedBroker(
-            commission_rate=(
-                self.config.execution.commission_rate if self.config.execution else 0.001
-            ),
-            min_commission=self.config.execution.min_commission if self.config.execution else 1.0,
-            spread=self.config.execution.spread if self.config.execution else 0.0001,
-            slippage_model=(
-                self.config.execution.slippage_model if self.config.execution else "normal"
-            ),
-            slippage_std=self.config.execution.slippage_std if self.config.execution else 0.0005,
-            latency_ms=self.config.execution.latency_ms if self.config.execution else 0.0,
+            config_view=execution_view,
             logger=self.logger,
             event_bus=self.event_bus,
             risk_manager=self.current_risk_manager,
@@ -514,8 +477,9 @@ class BacktestEngine:
         Returns:
             Risk manager instance
         """
+        risk_view = build_risk_config_view(self.config)
         self.current_risk_manager = RiskControlManager(
-            config=self.config.risk,
+            config_view=risk_view,
             logger=self.logger,
             event_bus=self.event_bus,
         )
@@ -545,9 +509,14 @@ class BacktestEngine:
         Returns:
             Backtest results dictionary
         """
-        # Load data if parameters provided (for test compatibility)
-        if ticker is not None:
-            self.load_data(ticker, start_date, end_date, interval)
+        data_overrides = self._collect_data_overrides(ticker, start_date, end_date, interval)
+        self._prepare_run_config(
+            data_overrides=data_overrides,
+            strategy_overrides=strategy_params,
+            portfolio_overrides=portfolio_params,
+        )
+        if self.current_data is None or data_overrides:
+            self.load_data(apply_overrides=False)
 
         if self.current_data is None:
             raise ValueError("No data loaded. Call load_data() first.")
@@ -1068,6 +1037,90 @@ class BacktestEngine:
             if risk_snapshot is not None:
                 record['risk_level'] = risk_snapshot.get('risk_level')
             self.trade_history.append(record)
+
+    # ------------------------------------------------------------------#
+    # Configuration helpers
+    # ------------------------------------------------------------------#
+    def _collect_data_overrides(
+        self,
+        ticker: str | None,
+        start_date: str | None,
+        end_date: str | None,
+        interval: str | None,
+    ) -> dict[str, Any]:
+        overrides: dict[str, Any] = {}
+        if ticker is not None:
+            overrides['tickers'] = [ticker]
+        if start_date is not None:
+            overrides['start_date'] = start_date
+        if end_date is not None:
+            overrides['finish_date'] = end_date
+        if interval is not None:
+            overrides['freq'] = interval
+        return overrides
+
+    def _prepare_run_config(
+        self,
+        *,
+        data_overrides: dict[str, Any] | None = None,
+        strategy_overrides: dict[str, Any] | None = None,
+        portfolio_overrides: dict[str, Any] | None = None,
+    ) -> BacktesterConfig:
+        builder = BacktestRunConfig(self._base_config)
+        if data_overrides:
+            builder.with_data_overrides(**data_overrides)
+        filtered_strategy = self._filter_component_overrides(strategy_overrides, StrategyConfig)
+        if filtered_strategy:
+            builder.with_strategy_overrides(**filtered_strategy)
+        filtered_portfolio = self._filter_component_overrides(portfolio_overrides, PortfolioConfig)
+        if filtered_portfolio:
+            builder.with_portfolio_overrides(**filtered_portfolio)
+        run_config = builder.build()
+        self.config = run_config
+        self._log_run_config_diff(run_config)
+        return run_config
+
+    def _filter_component_overrides(
+        self,
+        overrides: dict[str, Any] | None,
+        model: type[BaseModel],
+    ) -> dict[str, Any]:
+        if not overrides:
+            return {}
+        allowed = set(model.model_fields.keys())
+        filtered: dict[str, Any] = {}
+        for key, value in overrides.items():
+            if key not in allowed or value is None:
+                continue
+            filtered[key] = value
+        return filtered
+
+    def _log_startup_config_diff(self) -> None:
+        self._log_config_diff(
+            base=self._global_defaults,
+            updated=self._base_config,
+            prefix="Detected overrides relative to global defaults",
+        )
+
+    def _log_run_config_diff(self, run_config: BacktesterConfig) -> None:
+        self._log_config_diff(
+            base=self._base_config,
+            updated=run_config,
+            prefix="Applied run configuration overrides",
+        )
+
+    def _log_config_diff(
+        self,
+        *,
+        base: BacktesterConfig,
+        updated: BacktesterConfig,
+        prefix: str,
+    ) -> None:
+        deltas = diff_configs(base, updated)
+        if not deltas:
+            return
+        message = format_config_diff(deltas)
+        self.logger.info("%s:\n%s", prefix, message)
 
     def _invoke_component_hook(self, component: Any | None, hook: str, *args: Any) -> None:
         """Attempt to call a lifecycle hook on the supplied component."""

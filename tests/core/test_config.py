@@ -1,11 +1,16 @@
 """Tests for configuration helpers and validation."""
 
+from dataclasses import FrozenInstanceError
+
 import pytest
 
 from backtester.core.config import (
     BacktesterConfig,
     BacktestRunConfig,
     DataRetrievalConfig,
+    build_execution_config_view,
+    build_portfolio_config_view,
+    build_risk_config_view,
     validate_run_config,
 )
 
@@ -49,3 +54,29 @@ def test_validate_run_config_prevents_negative_leverage() -> None:
 
     with pytest.raises(ValueError, match="leverage_base"):
         validate_run_config(config)
+
+
+def test_portfolio_config_view_is_frozen() -> None:
+    """Portfolio config view should be immutable."""
+    config = BacktesterConfig()
+    view = build_portfolio_config_view(config)
+    with pytest.raises(FrozenInstanceError):
+        view.initial_capital = 0.0  # type: ignore[misc]
+
+
+def test_execution_config_view_is_frozen() -> None:
+    """Execution config view should be immutable."""
+    config = BacktesterConfig()
+    view = build_execution_config_view(config)
+    with pytest.raises(FrozenInstanceError):
+        view.commission_rate = 0.01  # type: ignore[misc]
+
+
+def test_risk_config_view_materialize_returns_copy() -> None:
+    """Mutating a materialized risk config should not leak into the view."""
+    config = BacktesterConfig()
+    view = build_risk_config_view(config)
+    materialized = view.materialize()
+    materialized.max_drawdown = 0.5
+    new_materialized = view.materialize()
+    assert new_materialized.max_drawdown != 0.5
