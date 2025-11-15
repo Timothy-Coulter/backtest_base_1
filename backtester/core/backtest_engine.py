@@ -13,8 +13,13 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from backtester.core.config import BacktesterConfig, get_config
-from backtester.core.event_bus import EventBus
-from backtester.core.events import create_market_data_event
+from backtester.core.event_bus import EventBus, EventFilter
+from backtester.core.event_handlers import PortfolioHandler, SignalHandler
+from backtester.core.events import (
+    PortfolioUpdateEvent,
+    SignalEvent,
+    create_market_data_event,
+)
 from backtester.core.logger import get_backtester_logger
 from backtester.core.performance import PerformanceAnalyzer
 from backtester.data.data_retrieval import DataRetrieval
@@ -38,6 +43,44 @@ from backtester.strategy.portfolio.portfolio_strategy_config import (
 from backtester.strategy.signal.base_signal_strategy import BaseSignalStrategy
 from backtester.strategy.signal.momentum_strategy import MomentumStrategy
 from backtester.strategy.signal.signal_strategy_config import MomentumStrategyConfig
+
+
+class _SignalCollector(SignalHandler):
+    """Event handler that stores signal events for the engine loop."""
+
+    def __init__(self, logger: logging.Logger) -> None:
+        super().__init__("engine_signal_collector", logger)
+        self._pending: list[SignalEvent] = []
+
+    def _process_signal(self, event: SignalEvent) -> dict[str, Any]:
+        payload = super()._process_signal(event)
+        self._pending.append(event)
+        return payload
+
+    def drain(self) -> list[SignalEvent]:
+        """Return and clear the pending signal events."""
+        pending = self._pending
+        self._pending = []
+        return pending
+
+
+class _PortfolioCollector(PortfolioHandler):
+    """Collect portfolio update events for downstream consumers."""
+
+    def __init__(self, logger: logging.Logger) -> None:
+        super().__init__("engine_portfolio_collector", logger)
+        self._pending: list[PortfolioUpdateEvent] = []
+
+    def _process_portfolio_update(self, event: PortfolioUpdateEvent) -> None:
+        super()._process_portfolio_update(event)
+        self._pending.append(event)
+
+    def drain(self) -> list[PortfolioUpdateEvent]:
+        """Return and clear queued portfolio events."""
+        pending = self._pending
+        self._pending = []
+        return pending
+
 
 warnings.filterwarnings('ignore')
 
@@ -83,7 +126,19 @@ class BacktestEngine:
                 config=default_config,
                 event_bus=self.event_bus,
             )
+        self._signal_collector = _SignalCollector(self.logger)
+        self._signal_subscription_id = self.event_bus.subscribe(
+            self._signal_collector.handle_event,
+            EventFilter(event_types={'SIGNAL'}),
+        )
+        self._portfolio_collector = _PortfolioCollector(self.logger)
+        self._portfolio_subscription_id = self.event_bus.subscribe(
+            self._portfolio_collector.handle_event,
+            EventFilter(event_types={'PORTFOLIO_UPDATE'}),
+        )
+
         self._primary_strategy_id = "primary_strategy"
+        self._portfolio_identifier = "engine_portfolio"
 
         # Initialize components immediately (for test compatibility)
         assert self.config.data is not None
@@ -290,6 +345,8 @@ class BacktestEngine:
             tax_rate=tax_rate,
             max_positions=max_positions,
             logger=self.logger,
+            event_bus=self.event_bus,
+            portfolio_id=self._portfolio_identifier,
         )
 
         # Update portfolio parameters if provided
@@ -374,6 +431,7 @@ class BacktestEngine:
             slippage_std=self.config.execution.slippage_std if self.config.execution else 0.0005,
             latency_ms=self.config.execution.latency_ms if self.config.execution else 0.0,
             logger=self.logger,
+            event_bus=self.event_bus,
         )
 
         # Set market data for the broker
@@ -394,6 +452,7 @@ class BacktestEngine:
         self.current_risk_manager = RiskControlManager(
             config=self.config.risk,
             logger=self.logger,
+            event_bus=self.event_bus,
         )
 
         self.logger.info("Created risk manager")
@@ -521,6 +580,9 @@ class BacktestEngine:
 
         assert self.current_data is not None
         for i in range(len(self.current_data) - 1):
+            # Clear any signals lingering from previous iteration
+            self._signal_collector.drain()
+
             current_time = self.current_data.index[i]
             current_row = self.current_data.iloc[i : i + 1]  # Single row DataFrame
             current_row_extended = current_row.copy()
@@ -554,7 +616,9 @@ class BacktestEngine:
             orchestration_result = self.strategy_orchestrator.on_market_data(
                 market_event, current_row_extended
             )
-            signals = [signal.payload for signal in orchestration_result.signals]
+            signals = self._drain_signal_payloads()
+            if not signals:
+                signals = [signal.payload for signal in orchestration_result.signals]
 
             # Fallback to direct strategy invocation when orchestrator produced nothing
             if not signals and self.current_strategy is not None:
@@ -575,20 +639,25 @@ class BacktestEngine:
             )
 
             # Check risk management
-            self._check_risk_management(portfolio_update['total_value'])
+            portfolio_events = self._drain_portfolio_events()
+            latest_total_value = portfolio_update['total_value']
+            if portfolio_events:
+                latest_total_value = portfolio_events[-1].total_value
+
+            self._check_risk_management(latest_total_value)
 
             # Update daily P&L tracking
             # Store results
-            portfolio_values.append(portfolio_update['total_value'])
+            portfolio_values.append(latest_total_value)
             assert self.current_portfolio is not None
             base_values.append(
                 getattr(
                     self.current_portfolio,
                     'base_pool',
-                    type('obj', (object,), {'capital': portfolio_update['total_value'] / 2}),
+                    type('obj', (object,), {'capital': latest_total_value / 2}),
                 )().capital
             )
-            alpha_values.append(portfolio_update['total_value'] / 2)
+            alpha_values.append(latest_total_value / 2)
 
             # Update strategy step
             if self.current_strategy is not None:
@@ -610,6 +679,29 @@ class BacktestEngine:
             'base_values': base_values,
             'alpha_values': alpha_values,
         }
+
+    def _drain_signal_payloads(self) -> list[dict[str, Any]]:
+        """Normalize collected signal events into dictionaries."""
+        signal_events = self._signal_collector.drain()
+        normalized_signals: list[dict[str, Any]] = []
+        for event in signal_events:
+            metadata = dict(event.metadata)
+            metadata.setdefault('symbol', event.symbol)
+            normalized_signals.append(
+                {
+                    'symbol': event.symbol,
+                    'signal_type': event.signal_type.value,
+                    'confidence': event.confidence,
+                    'strength': event.strength,
+                    'metadata': metadata,
+                    'source': event.source,
+                }
+            )
+        return normalized_signals
+
+    def _drain_portfolio_events(self) -> list[PortfolioUpdateEvent]:
+        """Return portfolio update events captured during the last cycle."""
+        return self._portfolio_collector.drain()
 
     def _process_signals_and_update_portfolio(
         self,

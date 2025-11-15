@@ -474,22 +474,76 @@ def create_market_data_event(
     priority: EventPriority = EventPriority.NORMAL,
 ) -> MarketDataEvent:
     """Create a market data event from raw data dictionary."""
+    event_time = time.time()
+    payload = dict(data)
+
+    data_type_raw = payload.get("data_type", MarketDataType.BAR.value)
+    if isinstance(data_type_raw, MarketDataType):
+        data_type = data_type_raw
+    else:
+        try:
+            data_type = MarketDataType(str(data_type_raw).lower())
+        except ValueError:
+            data_type = MarketDataType.BAR
+
+    open_price = float(payload.get("open", payload.get("Open", 0.0)))
+    high_price = float(payload.get("high", payload.get("High", open_price)))
+    low_price = float(payload.get("low", payload.get("Low", open_price)))
+    close_price = float(payload.get("close", payload.get("Close", open_price)))
+    volume_value = payload.get("volume", payload.get("Volume"))
+    volume = float(volume_value) if volume_value is not None else None
+    timestamp_data = payload.get("timestamp")
+
+    symbols_value = payload.get("symbols") or [symbol]
+    if isinstance(symbols_value, str):
+        symbols: list[str] = [symbols_value]
+    else:
+        symbols = list(symbols_value)
+    if symbol not in symbols:
+        symbols.append(symbol)
+
+    metadata = {
+        "symbol": symbol,
+        "symbols": symbols,
+        "bar": {
+            "open": open_price,
+            "high": high_price,
+            "low": low_price,
+            "close": close_price,
+            "volume": volume,
+            "timestamp": timestamp_data or event_time,
+        },
+        "provenance": {
+            "source": source,
+            "ingested_at": event_time,
+            "data_type": data_type.value,
+        },
+        "raw": payload,
+    }
+
+    if "data_frame" in payload:
+        metadata["data_frame"] = payload["data_frame"]
+
+    if "symbol" not in payload:
+        payload["symbol"] = symbol
+    payload.setdefault("symbols", symbols)
+
     return MarketDataEvent(
         event_type="MARKET_DATA",
-        timestamp=time.time(),
+        timestamp=event_time,
         source=source,
         symbol=symbol,
-        data_type=MarketDataType(data.get("data_type", "bar")),
-        open_price=float(data.get("open", 0)),
-        high_price=float(data.get("high", 0)),
-        low_price=float(data.get("low", 0)),
-        close_price=float(data.get("close", 0)),
-        volume=data.get("volume"),
-        timestamp_data=data.get("timestamp"),
-        bid_price=data.get("bid"),
-        ask_price=data.get("ask"),
-        trade_count=data.get("trade_count"),
-        metadata=data,
+        data_type=data_type,
+        open_price=open_price,
+        high_price=high_price,
+        low_price=low_price,
+        close_price=close_price,
+        volume=volume,
+        timestamp_data=timestamp_data,
+        bid_price=payload.get("bid"),
+        ask_price=payload.get("ask"),
+        trade_count=payload.get("trade_count"),
+        metadata=metadata,
         priority=priority,
     )
 
@@ -507,6 +561,12 @@ def create_signal_event(
     if isinstance(signal_type, str):
         signal_type = SignalType(signal_type.upper())
 
+    metadata_payload = dict(metadata or {})
+    metadata_payload.setdefault("symbol", symbol)
+    metadata_payload.setdefault("symbols", [symbol])
+    metadata_payload.setdefault("signal_type", signal_type.value)
+    metadata_payload.setdefault("source_strategy", source)
+
     return SignalEvent(
         event_type="SIGNAL",
         timestamp=time.time(),
@@ -516,7 +576,7 @@ def create_signal_event(
         strength=strength,
         confidence=confidence,
         priority=priority,
-        metadata=metadata,
+        metadata=metadata_payload,
     )
 
 
@@ -527,12 +587,19 @@ def create_order_event(
     quantity: float,
     source: str = "strategy",
     priority: EventPriority = EventPriority.HIGH,
+    metadata: dict[str, Any] | None = None,
 ) -> OrderEvent:
     """Create an order event."""
     if isinstance(side, str):
         side = OrderSide(side.upper())
     if isinstance(order_type, str):
         order_type = OrderType(order_type.upper())
+
+    metadata_payload = dict(metadata or {})
+    metadata_payload.setdefault("symbol", symbol)
+    metadata_payload.setdefault("side", side.value)
+    metadata_payload.setdefault("order_type", order_type.value)
+    metadata_payload.setdefault("source_strategy", source)
 
     return OrderEvent(
         event_type="ORDER",
@@ -544,6 +611,7 @@ def create_order_event(
         order_type=order_type,
         quantity=quantity,
         priority=priority,
+        metadata=metadata_payload,
     )
 
 
@@ -554,8 +622,15 @@ def create_portfolio_update_event(
     positions_value: float,
     source: str = "portfolio_manager",
     priority: EventPriority = EventPriority.NORMAL,
+    metadata: dict[str, Any] | None = None,
 ) -> PortfolioUpdateEvent:
     """Create a portfolio update event."""
+    metadata_payload = dict(metadata or {})
+    metadata_payload.setdefault("portfolio_id", portfolio_id)
+    metadata_payload.setdefault("total_value", total_value)
+    metadata_payload.setdefault("cash_balance", cash_balance)
+    metadata_payload.setdefault("positions_value", positions_value)
+
     return PortfolioUpdateEvent(
         event_type="PORTFOLIO_UPDATE",
         timestamp=time.time(),
@@ -565,6 +640,7 @@ def create_portfolio_update_event(
         cash_balance=cash_balance,
         positions_value=positions_value,
         priority=priority,
+        metadata=metadata_payload,
     )
 
 
@@ -580,6 +656,11 @@ def create_risk_alert_event(
     if isinstance(risk_level, str):
         risk_level = RiskLevel(risk_level.upper())
 
+    event_metadata = {
+        "component": component,
+        "alert_id": alert_id,
+    }
+
     return RiskAlertEvent(
         event_type="RISK_ALERT",
         timestamp=time.time(),
@@ -589,6 +670,7 @@ def create_risk_alert_event(
         message=message,
         component=component,
         priority=priority,
+        metadata=event_metadata,
     )
 
 

@@ -22,6 +22,37 @@ from backtester.main import run_backtest
 
 # Run a basic backtest
 results = run_backtest()
+```
+
+## Event Payload Contract
+
+All components communicate through the event bus using a shared metadata contract. The keys
+below are guaranteed to exist (or be explicitly empty) so subscribers can build filters without
+having to reverse‑engineer publisher internals.
+
+- **MarketDataEvent**
+  - `metadata.symbol` and `metadata.symbols` (universe slice for the payload)
+  - `metadata.bar` containing `open`, `high`, `low`, `close`, `volume`, `timestamp`
+  - `metadata.provenance.source` and `metadata.provenance.ingested_at`
+  - `metadata.data_frame` when the upstream producer supplied a pandas window
+- **SignalEvent**
+  - `metadata.symbol`, `metadata.symbols`, and `metadata.signal_type`
+  - `metadata.source_strategy` and any raw indicator payload under `metadata.raw_signal`
+  - Priority defaults to HIGH so downstream order routers can rely on delivery order
+- **OrderEvent**
+  - `metadata.symbol`, `metadata.side`, `metadata.order_type`
+  - Execution context (`fill_quantity`, `fill_price`, `commission`) plus `metadata.message`
+    when an order is rejected or cancelled
+- **PortfolioUpdateEvent**
+  - `metadata.portfolio_id`, `metadata.positions`, and `metadata.position_updates`
+  - Mirrors the monetary snapshot via `metadata.total_value`, `metadata.cash_balance`,
+    and `metadata.positions_value`
+- **RiskAlertEvent**
+  - `metadata.component`, `metadata.portfolio_id` (when applicable), and `metadata.violations`
+  - `metadata.recommendations` summarising the suggested remediation steps
+
+When subscribing, prefer the metadata keys (`symbol`/`symbols`) rather than bespoke attributes,
+as they are populated uniformly regardless of which module produced the event.
 
 ## Development Commands
 

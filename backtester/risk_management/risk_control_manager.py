@@ -5,10 +5,13 @@ position sizing, and risk limits into a unified risk control system.
 """
 
 import logging
+import uuid
 from typing import Any
 
 import pandas as pd
 
+from backtester.core.event_bus import EventBus, EventFilter
+from backtester.core.events import PortfolioUpdateEvent, create_risk_alert_event
 from backtester.risk_management.component_configs.comprehensive_risk_config import (
     ComprehensiveRiskConfig,
 )
@@ -26,15 +29,19 @@ class RiskControlManager:
         self,
         config: ComprehensiveRiskConfig | None = None,
         logger: logging.Logger | None = None,
+        event_bus: EventBus | None = None,
     ) -> None:
         """Initialize the risk control manager.
 
         Args:
             config: ComprehensiveRiskConfig with risk control parameters
             logger: Optional logger instance
+            event_bus: Optional event bus for publishing/subscribing to events
         """
         self.config: ComprehensiveRiskConfig = config or ComprehensiveRiskConfig()
         self.logger: logging.Logger = logger or logging.getLogger(__name__)
+        self.event_bus = event_bus
+        self._portfolio_subscription_id: str | None = None
 
         # Initialize risk control components
         self.stop_loss: StopLoss | None = None
@@ -49,6 +56,52 @@ class RiskControlManager:
         # State tracking
         self.current_positions: dict[str, Any] = {}
         self.risk_signals_history: list[dict[str, Any]] = []
+
+        if self.event_bus is not None:
+            self._subscribe_to_portfolio_updates()
+
+    def attach_event_bus(self, event_bus: EventBus) -> None:
+        """Attach an event bus after initialization."""
+        self.event_bus = event_bus
+        self._subscribe_to_portfolio_updates()
+
+    def _subscribe_to_portfolio_updates(self) -> None:
+        """Subscribe to portfolio update events for proactive risk monitoring."""
+        if self.event_bus is None or self._portfolio_subscription_id is not None:
+            return
+
+        self._portfolio_subscription_id = self.event_bus.subscribe(
+            self._handle_portfolio_event,
+            EventFilter(event_types={'PORTFOLIO_UPDATE'}),
+        )
+
+    def _handle_portfolio_event(self, event: PortfolioUpdateEvent) -> None:
+        """React to portfolio updates by evaluating risk and publishing alerts."""
+        if not isinstance(event, PortfolioUpdateEvent):
+            return
+
+        positions = event.metadata.get('positions', {})
+        risk_result = self.check_portfolio_risk(event.total_value, positions)
+        self.add_risk_signal(risk_result)
+
+        if not risk_result['violations'] and risk_result['risk_level'] == 'LOW':
+            return
+
+        alert = create_risk_alert_event(
+            alert_id=f"risk_{uuid.uuid4().hex}",
+            risk_level=risk_result['risk_level'],
+            message="; ".join(risk_result['violations']) or "Portfolio risk threshold exceeded",
+            component="RiskControlManager",
+        )
+        alert.metadata.update(
+            {
+                'portfolio_id': event.portfolio_id,
+                'violations': risk_result['violations'],
+                'recommendations': risk_result['recommendations'],
+            }
+        )
+        if self.event_bus:
+            self.event_bus.publish(alert, immediate=True)
 
     def _initialize_components(self) -> None:
         """Initialize all risk control components based on config."""

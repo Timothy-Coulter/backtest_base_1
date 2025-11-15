@@ -5,12 +5,18 @@ commission calculations, and trade reporting.
 """
 
 import logging
+import time
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
 from backtester.core.config import SimulatedBrokerConfig
+from backtester.core.event_bus import EventBus, EventPriority
+from backtester.core.events import OrderEvent as BusOrderEvent
+from backtester.core.events import OrderSide as EventOrderSide
+from backtester.core.events import OrderStatus as EventOrderStatus
+from backtester.core.events import OrderType as EventOrderType
 from backtester.execution.order import Order, OrderManager, OrderType
 
 
@@ -27,6 +33,7 @@ class SimulatedBroker:
         slippage_std: float | None = None,
         latency_ms: float | None = None,
         logger: logging.Logger | None = None,
+        event_bus: EventBus | None = None,
     ) -> None:
         """Initialize the simulated broker.
 
@@ -39,8 +46,10 @@ class SimulatedBroker:
             slippage_std: Standard deviation for slippage simulation - deprecated, use config
             latency_ms: Simulated latency in milliseconds - deprecated, use config
             logger: Optional logger instance
+            event_bus: Optional event bus for publishing order execution events
         """
         self.logger: logging.Logger = logger or logging.getLogger(__name__)
+        self.event_bus = event_bus
 
         # Use config if provided, otherwise use individual parameters
         if config is not None:
@@ -131,6 +140,7 @@ class SimulatedBroker:
         current_price = self.get_current_price(order.symbol)
         if current_price == 0.0:
             order.reject("No market data available")
+            self._publish_order_event(order, EventOrderStatus.REJECTED, message="No market data")
             return False
 
         bid, ask = self.get_bid_ask(order.symbol)
@@ -146,6 +156,11 @@ class SimulatedBroker:
         )
         if fill_quantity <= 0:
             order.reject("Insufficient funds or position limits")
+            self._publish_order_event(
+                order,
+                EventOrderStatus.REJECTED,
+                message="Insufficient funds or position limits",
+            )
             return False
 
         # Calculate commission
@@ -174,7 +189,60 @@ class SimulatedBroker:
         self.logger.info(
             f"Executed {order}: {fill_quantity}@{execution_price:.4f}, commission: ${commission:.2f}"
         )
+        self._publish_order_event(
+            order,
+            EventOrderStatus(order.status.value),
+            fill_quantity=fill_quantity,
+            fill_price=execution_price,
+            commission=commission,
+        )
         return True
+
+    def _publish_order_event(
+        self,
+        order: Order,
+        status: EventOrderStatus,
+        *,
+        fill_quantity: float | None = None,
+        fill_price: float | None = None,
+        commission: float | None = None,
+        message: str | None = None,
+    ) -> None:
+        """Publish an order event to the event bus for downstream consumers."""
+        if self.event_bus is None:
+            return
+
+        try:
+            metadata = dict(order.metadata or {})
+            if fill_quantity is not None:
+                metadata['fill_quantity'] = fill_quantity
+            if fill_price is not None:
+                metadata['fill_price'] = fill_price
+            if commission is not None:
+                metadata['commission'] = commission
+            if message:
+                metadata['message'] = message
+
+            event = BusOrderEvent(
+                event_type="ORDER",
+                timestamp=time.time(),
+                source="simulated_broker",
+                symbol=order.symbol,
+                order_id=order.order_id or "",
+                side=EventOrderSide(order.side.value),
+                order_type=EventOrderType(order.order_type.value),
+                quantity=order.quantity,
+                priority=EventPriority.HIGH,
+                metadata=metadata,
+                price=fill_price,
+                status=status,
+                filled_quantity=order.filled_quantity,
+                average_fill_price=order.filled_price,
+                commission=order.commission,
+            )
+            self.event_bus.publish(event, immediate=True)
+        except Exception as exc:  # pragma: no cover - diagnostics only
+            self.logger.debug("Failed to publish order event: %s", exc)
 
     def _determine_execution_price(
         self, order: Order, market_price: float, bid: float, ask: float

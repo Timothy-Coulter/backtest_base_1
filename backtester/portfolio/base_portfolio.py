@@ -10,6 +10,9 @@ from typing import Any, Protocol
 
 import numpy as np
 
+from backtester.core.event_bus import EventBus
+from backtester.core.events import create_portfolio_update_event
+
 
 class PortfolioPerformance(Protocol):
     """Protocol for portfolio performance metrics."""
@@ -47,6 +50,8 @@ class BasePortfolio(ABC):
         funding_enabled: bool = True,
         tax_rate: float = 0.45,
         logger: logging.Logger | None = None,
+        event_bus: EventBus | None = None,
+        portfolio_id: str | None = None,
     ) -> None:
         """Initialize base portfolio.
 
@@ -59,8 +64,12 @@ class BasePortfolio(ABC):
             funding_enabled: Whether to charge interest on borrowed funds
             tax_rate: Tax rate on capital gains
             logger: Optional logger instance
+            event_bus: Optional event bus for publishing portfolio updates
+            portfolio_id: Identifier used in portfolio update events
         """
         self.logger: logging.Logger = logger or logging.getLogger(__name__)
+        self.event_bus = event_bus
+        self.portfolio_id = portfolio_id or self.__class__.__name__.lower()
 
         # Core portfolio parameters
         self.initial_capital: float = initial_capital
@@ -82,6 +91,29 @@ class BasePortfolio(ABC):
         self.logger.info(
             f"Initialized {self.__class__.__name__} with ${initial_capital:.2f} capital"
         )
+
+    def _publish_portfolio_update(
+        self,
+        total_value: float,
+        cash_balance: float,
+        positions_value: float,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """Publish a portfolio update event to the event bus."""
+        if self.event_bus is None:
+            return
+
+        metadata_payload = dict(metadata or {})
+        metadata_payload.setdefault("portfolio_id", self.portfolio_id)
+
+        event = create_portfolio_update_event(
+            portfolio_id=self.portfolio_id,
+            total_value=total_value,
+            cash_balance=cash_balance,
+            positions_value=positions_value,
+            metadata=metadata_payload,
+        )
+        self.event_bus.publish(event, immediate=True)
 
     @property
     def total_value(self) -> float:

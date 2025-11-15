@@ -185,7 +185,6 @@ class TestEventBus:
     def test_event_bus_initialization(self):
         """Test event bus initialization."""
         assert self.event_bus.logger is not None
-        assert self.event_bus._subscriptions == {}
         assert self.event_bus._filtered_subscriptions == []
         assert self.event_bus._event_queue == []
         assert self.event_bus._processing is False
@@ -204,7 +203,7 @@ class TestEventBus:
 
         assert subscription_id is not None
         assert len(self.event_bus._filtered_subscriptions) == 1
-        assert self.event_bus._filtered_subscriptions[0][1] == handler
+        assert self.event_bus._filtered_subscriptions[0].handler == handler
 
     def test_subscribe_with_filter(self):
         """Test subscribing with a filter."""
@@ -218,8 +217,8 @@ class TestEventBus:
 
         assert subscription_id is not None
         assert len(self.event_bus._filtered_subscriptions) == 1
-        assert self.event_bus._filtered_subscriptions[0][0] == event_filter
-        assert self.event_bus._filtered_subscriptions[0][1] == handler
+        assert self.event_bus._filtered_subscriptions[0].event_filter == event_filter
+        assert self.event_bus._filtered_subscriptions[0].handler == handler
 
     def test_subscribe_invalid_handler(self):
         """Test subscribing with invalid handler."""
@@ -237,6 +236,27 @@ class TestEventBus:
 
         assert result is True
         assert len(self.event_bus._filtered_subscriptions) == 0
+
+    def test_unsubscribe_requires_exact_identifier(self):
+        """Ensure unsubscribe only removes the matching subscription ID."""
+        calls: list[str] = []
+
+        def handler_a(event):
+            calls.append("a")
+
+        def handler_b(event):
+            calls.append("b")
+
+        sub_a = self.event_bus.subscribe(handler_a)
+        sub_b = self.event_bus.subscribe(handler_b)
+
+        # Using a non-existent ID should leave subscriptions untouched
+        assert self.event_bus.unsubscribe("sub_999") is False
+        assert len(self.event_bus._filtered_subscriptions) == 2
+
+        assert self.event_bus.unsubscribe(sub_a) is True
+        assert len(self.event_bus._filtered_subscriptions) == 1
+        assert self.event_bus._filtered_subscriptions[0].subscription_id == sub_b
 
     def test_unsubscribe_nonexistent(self):
         """Test unsubscribing non-existent subscription."""
@@ -294,6 +314,28 @@ class TestEventBus:
         assert self.event_bus._event_queue == []
         # Event should be processed immediately even when queued due to single event
 
+    def test_publish_respects_subscription_order(self):
+        """Validate that handlers are invoked in subscribe order."""
+        fan_out_order: list[str] = []
+
+        def handler_a(event):
+            fan_out_order.append("a")
+
+        def handler_b(event):
+            fan_out_order.append("b")
+
+        def handler_c(event):
+            fan_out_order.append("c")
+
+        self.event_bus.subscribe(handler_a)
+        self.event_bus.subscribe(handler_b)
+        self.event_bus.subscribe(handler_c)
+
+        event = Event("TEST_EVENT", time.time(), "test_source")
+        self.event_bus.publish(event)
+
+        assert fan_out_order == ["a", "b", "c"]
+
     def test_register_handler(self):
         """Test registering type-specific handler."""
 
@@ -327,6 +369,21 @@ class TestEventBus:
         """Test deregistering non-existent handler."""
         result = self.event_bus.deregister_handler("TEST_EVENT", "nonexistent_id")
         assert result is False
+
+    def test_metadata_filter_list_membership(self):
+        """Ensure metadata filters treat lists as sets for membership tests."""
+        flt = EventFilter(metadata_filters={'symbols': {'AAPL', 'MSFT'}})
+        event = Event("MARKET_DATA", time.time(), "src", metadata={'symbols': ['MSFT']})
+        assert flt.matches(event) is True
+
+        event.metadata['symbols'] = ['TSLA']
+        assert flt.matches(event) is False
+
+    def test_metadata_filter_wildcard(self):
+        """The '*' metadata filter should match all payloads."""
+        flt = EventFilter(metadata_filters={'symbols': '*'})
+        event = Event("MARKET_DATA", time.time(), "src", metadata={'symbols': ['ANY']})
+        assert flt.matches(event) is True
 
     def test_handler_error_handling(self):
         """Test error handling in event handlers."""

@@ -77,6 +77,7 @@ class BaseSignalStrategy(ABC):
         self.signal_history: list[dict[str, Any]] = []  # For backward compatibility
         self.indicators: dict[str, BaseIndicator] = {}
         self.models: dict[str, BaseModel] = {}
+        self._market_data_subscription_id: str | None = None
 
         # Performance tracking
         self.signal_count = 0
@@ -95,17 +96,26 @@ class BaseSignalStrategy(ABC):
 
     def _setup_event_subscriptions(self) -> None:
         """Set up event subscriptions for the strategy."""
-        # Subscribe to market data events for configured symbols
+        symbol_filters: set[str] = set()
+        for symbol in self.config.symbols:
+            if symbol:
+                symbol_filters.add(str(symbol).upper())
+
+        metadata_filters: dict[str, Any] | None = None
+        if symbol_filters and "*" not in symbol_filters and "ALL" not in symbol_filters:
+            metadata_filters = {'symbols': symbol_filters}
+
         market_data_filter = EventFilter(
             event_types={'MARKET_DATA'},
-            sources={'market_data_feed'},
-            metadata_filters={'symbols': self.config.symbols},
+            metadata_filters=metadata_filters,
         )
 
-        subscription_id = self.event_bus.subscribe(
+        self._market_data_subscription_id = self.event_bus.subscribe(
             self._handle_market_data_event, market_data_filter
         )
-        self.logger.debug(f"Subscribed to market data events with ID: {subscription_id}")
+        self.logger.debug(
+            "Subscribed to market data events with ID: %s", self._market_data_subscription_id
+        )
 
     def _initialize_components(self) -> None:
         """Initialize indicators and models based on configuration."""
@@ -169,18 +179,19 @@ class BaseSignalStrategy(ABC):
             # Extract market data
             symbol = event.symbol
             timestamp = event.timestamp
-            data = {
-                'open': event.open_price,
-                'high': event.high_price,
-                'low': event.low_price,
-                'close': event.close_price,
-                'volume': event.volume or 0,
-                'timestamp': timestamp,
-            }
-
-            # Create DataFrame for processing
-            df = pd.DataFrame([data])
-            df.set_index('timestamp', inplace=True)
+            metadata_frame = event.metadata.get("data_frame")
+            if isinstance(metadata_frame, pd.DataFrame) and not metadata_frame.empty:
+                df = metadata_frame.copy()
+            else:
+                data = {
+                    'open': event.open_price,
+                    'high': event.high_price,
+                    'low': event.low_price,
+                    'close': event.close_price,
+                    'volume': event.volume or 0,
+                    'timestamp': timestamp,
+                }
+                df = pd.DataFrame([data]).set_index('timestamp')
 
             # Generate signals
             signals = self.generate_signals(df, symbol)

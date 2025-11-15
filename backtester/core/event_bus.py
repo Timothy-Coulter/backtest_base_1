@@ -94,11 +94,64 @@ class EventFilter:
 
         # Check metadata filters
         if self.metadata_filters:
+            metadata = event.metadata or {}
             for key, value in self.metadata_filters.items():
-                if key not in event.metadata or event.metadata[key] != value:
+                candidate = metadata.get(key)
+                if candidate is None and hasattr(event, key):
+                    candidate = getattr(event, key)
+                if candidate is None:
+                    return False
+                if not self._metadata_value_matches(value, candidate):
                     return False
 
         return True
+
+    @staticmethod
+    def _metadata_value_matches(expected: Any, actual: Any) -> bool:
+        """Compare metadata values supporting collections and wildcards."""
+        if callable(expected):
+            try:
+                return bool(expected(actual))
+            except Exception:
+                return False
+
+        if expected == "*":
+            return True
+
+        if isinstance(expected, (set, list, tuple)):
+            expected_set = {
+                EventFilter._normalise_scalar(value) for value in expected if value is not None
+            }
+            if isinstance(actual, (set, list, tuple)):
+                actual_set = {
+                    EventFilter._normalise_scalar(value) for value in actual if value is not None
+                }
+                return bool(expected_set.intersection(actual_set))
+
+            return EventFilter._normalise_scalar(actual) in expected_set
+
+        if isinstance(expected, str):
+            return bool(
+                EventFilter._normalise_scalar(actual) == EventFilter._normalise_scalar(expected)
+            )
+
+        return bool(actual == expected)
+
+    @staticmethod
+    def _normalise_scalar(value: Any) -> Any:
+        """Normalise scalar values for comparison."""
+        if isinstance(value, str):
+            return value.upper()
+        return value
+
+
+@dataclass(slots=True)
+class EventSubscription:
+    """Data object describing a subscriber relationship."""
+
+    subscription_id: str
+    event_filter: EventFilter
+    handler: Callable[[Event], None]
 
 
 class EventBus:
@@ -113,8 +166,7 @@ class EventBus:
         self.logger = logger or get_backtester_logger(__name__)
 
         # Subscription management
-        self._subscriptions: dict[str, list[Callable[[Event], None]]] = defaultdict(list)
-        self._filtered_subscriptions: list[tuple[EventFilter, Callable[[Event], None]]] = []
+        self._filtered_subscriptions: list[EventSubscription] = []
 
         # Event processing
         self._event_queue: list[Event] = []
@@ -126,7 +178,7 @@ class EventBus:
         self._processed_events: int = 0
         self._dropped_events: int = 0
 
-        # Event ID tracking
+        # ID tracking
         self._next_event_id: int = 0
 
         self.logger.info("Event bus initialized")
@@ -146,17 +198,17 @@ class EventBus:
         if not callable(handler):
             raise ValueError("Handler must be callable")
 
-        subscription_id = f"sub_{id(handler)}_{self._next_event_id}"
+        subscription_id = f"sub_{self._next_event_id}"
         self._next_event_id += 1
 
-        if event_filter:
-            self._filtered_subscriptions.append((event_filter, handler))
-            self.logger.debug(f"Added filtered subscription {subscription_id}")
-        else:
-            # Default to all events if no filter specified
-            default_filter = EventFilter()
-            self._filtered_subscriptions.append((default_filter, handler))
-            self.logger.debug(f"Added default subscription {subscription_id}")
+        filter_to_use = event_filter or EventFilter()
+        subscription = EventSubscription(subscription_id, filter_to_use, handler)
+        self._filtered_subscriptions.append(subscription)
+        self.logger.debug(
+            "Added subscription %s for event types %s",
+            subscription_id,
+            filter_to_use.event_types or "ANY",
+        )
 
         return subscription_id
 
@@ -169,21 +221,14 @@ class EventBus:
         Returns:
             True if subscription was found and removed, False otherwise
         """
-        removed = False
-
-        # Remove from filtered subscriptions
-        for i, (_, handler) in enumerate(self._filtered_subscriptions):
-            if subscription_id in f"sub_{id(handler)}_{i}":
+        for i, subscription in enumerate(self._filtered_subscriptions):
+            if subscription.subscription_id == subscription_id:
                 del self._filtered_subscriptions[i]
-                removed = True
-                break
+                self.logger.debug("Removed subscription %s", subscription_id)
+                return True
 
-        if removed:
-            self.logger.debug(f"Removed subscription {subscription_id}")
-        else:
-            self.logger.warning(f"Subscription {subscription_id} not found")
-
-        return removed
+        self.logger.warning("Subscription %s not found", subscription_id)
+        return False
 
     def publish(self, event: Event, immediate: bool = False) -> None:
         """Publish an event to all subscribers.
@@ -270,10 +315,10 @@ class EventBus:
         """Process a single event through all subscribers."""
         try:
             # Process filtered subscriptions
-            for event_filter, handler in self._filtered_subscriptions:
-                if event_filter.matches(event):
+            for subscription in self._filtered_subscriptions:
+                if subscription.event_filter.matches(event):
                     try:
-                        handler(event)
+                        subscription.handler(event)
                     except Exception as e:
                         self.logger.error(
                             f"Error in filtered handler for event {event.event_id}: {e}"

@@ -9,6 +9,7 @@ from typing import Any
 
 import pandas as pd
 
+from backtester.core.event_bus import EventBus
 from backtester.portfolio.base_portfolio import BasePortfolio
 from backtester.portfolio.position import Position
 
@@ -31,6 +32,8 @@ class GeneralPortfolio(BasePortfolio):
         tax_rate: float = 0.45,
         max_positions: int = 10,
         logger: logging.Logger | None = None,
+        event_bus: EventBus | None = None,
+        portfolio_id: str | None = None,
     ) -> None:
         """Initialize the general portfolio.
 
@@ -44,6 +47,8 @@ class GeneralPortfolio(BasePortfolio):
             tax_rate: Tax rate on capital gains
             max_positions: Maximum number of concurrent positions
             logger: Optional logger instance
+            event_bus: Optional event bus used to broadcast updates
+            portfolio_id: Identifier for emitted portfolio events
         """
         super().__init__(
             initial_capital=initial_capital,
@@ -54,6 +59,8 @@ class GeneralPortfolio(BasePortfolio):
             funding_enabled=funding_enabled,
             tax_rate=tax_rate,
             logger=logger,
+            event_bus=event_bus,
+            portfolio_id=portfolio_id,
         )
 
         # Portfolio-specific parameters
@@ -349,6 +356,26 @@ class GeneralPortfolio(BasePortfolio):
 
         # Handle tax calculations
         self._handle_tax_calculation(timestamp)
+        positions_value = max(total_portfolio_value - self.cash, 0.0)
+        positions_snapshot = {
+            sym: {
+                'quantity': pos.quantity,
+                'avg_price': pos.avg_price,
+                'current_price': pos.current_price,
+            }
+            for sym, pos in self.positions.items()
+        }
+        event_metadata = {
+            'positions': positions_snapshot,
+            'position_updates': position_updates,
+            'timestamp': timestamp,
+        }
+        self._publish_portfolio_update(
+            total_value=total_portfolio_value,
+            cash_balance=self.cash,
+            positions_value=positions_value,
+            metadata=event_metadata,
+        )
 
         return {
             'timestamp': timestamp,

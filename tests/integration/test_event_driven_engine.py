@@ -13,7 +13,7 @@ import pytest
 from backtester.core.backtest_engine import BacktestEngine
 from backtester.core.config import BacktesterConfig
 from backtester.core.event_bus import EventFilter
-from backtester.core.events import SignalEvent
+from backtester.core.events import SignalEvent, create_portfolio_update_event
 from backtester.strategy.signal.momentum_strategy import MomentumStrategy
 
 
@@ -117,6 +117,18 @@ def _install_stubs(
         processed_signals.append(signals)
         next_value = 100.0 + len(processed_signals)
         stub_portfolio.portfolio_values.append(next_value)
+        portfolio_event = create_portfolio_update_event(
+            portfolio_id="stub_portfolio",
+            total_value=next_value,
+            cash_balance=stub_portfolio.initial_capital,
+            positions_value=0.0,
+            source="stub_portfolio",
+            metadata={
+                'timestamp': timestamp,
+                'position_updates': [],
+            },
+        )
+        self.event_bus.publish(portfolio_event, immediate=True)
         return {"total_value": next_value}
 
     engine.create_portfolio = types.MethodType(fake_create_portfolio, engine)
@@ -142,9 +154,14 @@ def test_backtest_engine_event_driven_flow() -> None:
     engine.current_data = market_data
 
     captured_signals: list[SignalEvent] = []
+    captured_portfolio_events = []
     engine.event_bus.subscribe(
         lambda event: captured_signals.append(event),
         EventFilter(event_types={"SIGNAL"}),
+    )
+    engine.event_bus.subscribe(
+        lambda event: captured_portfolio_events.append(event),
+        EventFilter(event_types={"PORTFOLIO_UPDATE"}),
     )
 
     stub_portfolio = StubPortfolio()
@@ -165,6 +182,8 @@ def test_backtest_engine_event_driven_flow() -> None:
     expected_iterations = len(market_data) - 1
     assert len(processed_signals) == expected_iterations
     assert len(captured_signals) == expected_iterations
+    assert len(captured_portfolio_events) == expected_iterations
+    assert captured_portfolio_events[-1].total_value == pytest.approx(100.0 + expected_iterations)
     assert results["performance"]["final_portfolio_value"] == pytest.approx(
         100.0 + expected_iterations
     )
