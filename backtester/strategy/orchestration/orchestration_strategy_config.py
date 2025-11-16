@@ -131,3 +131,19 @@ class OrchestrationConfig(BaseModel):
     def is_registered(self, identifier: str) -> bool:
         """Check whether a strategy identifier exists in the configuration."""
         return self.get_strategy(identifier) is not None
+
+    @classmethod
+    def default_config(cls) -> OrchestrationConfig:
+        """Return the default orchestration configuration."""
+        return cls(
+            orchestrator_type=OrchestratorType.SEQUENTIAL,
+            strategies=[
+                StrategyReference(
+                    identifier="primary_strategy",
+                    kind=StrategyKind.SIGNAL,
+                    priority=0,
+                )
+            ],
+            conflict_resolution=ConflictResolutionStrategy.HIGHEST_CONFIDENCE,
+            performance_aggregation=PerformanceAggregationMethod.WEIGHTED,
+        )

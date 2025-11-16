@@ -41,7 +41,7 @@ class DataRetrieval:
     it falls back to downloading from the data source.
     """
 
-    def __init__(self, config: DataRetrievalConfig):
+    def __init__(self, config: DataRetrievalConfig | None = None) -> None:
         """Initialize DataRetrieval with configuration.
 
         Parameters
@@ -49,7 +49,7 @@ class DataRetrieval:
         config : DataRetrievalConfig
             Configuration object containing all data retrieval parameters
         """
-        self.config = config
+        self.config = (config or self.default_config()).model_copy(deep=True)
         self.market = Market(market_data_generator=MarketDataGenerator())
         self.data_quality = DataQuality()
         self.logger = LoggerManager().getLogger(__name__)
@@ -76,6 +76,11 @@ class DataRetrieval:
             resolved = self.config.model_copy(deep=True)
         self._populate_api_keys(resolved)
         return resolved
+
+    @classmethod
+    def default_config(cls) -> DataRetrievalConfig:
+        """Return the default configuration used when none is provided."""
+        return DataRetrievalConfig()
 
     def _create_market_data_request(
         self, config: DataRetrievalConfig, cache_algo: str = "internet_load_return"

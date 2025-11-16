@@ -9,7 +9,7 @@ import logging
 import time
 import uuid
 import warnings
-from typing import Any
+from typing import Any, cast
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -17,15 +17,12 @@ from pydantic import BaseModel
 
 from backtester.core.config import (
     BacktesterConfig,
-    BacktestRunConfig,
     PortfolioConfig,
     StrategyConfig,
-    build_execution_config_view,
-    build_portfolio_config_view,
-    build_risk_config_view,
     get_config,
 )
 from backtester.core.config_diff import diff_configs, format_config_diff
+from backtester.core.config_processor import ConfigInput, ConfigProcessor
 from backtester.core.event_bus import EventBus, EventFilter
 from backtester.core.event_handlers import OrderHandler, PortfolioHandler, SignalHandler
 from backtester.core.events import (
@@ -43,19 +40,17 @@ from backtester.execution.broker import SimulatedBroker
 from backtester.execution.order import OrderStatus, OrderType
 from backtester.portfolio import GeneralPortfolio
 from backtester.risk_management.risk_control_manager import RiskControlManager
+from backtester.strategy.factories import (
+    build_momentum_strategy_config,
+    build_portfolio_strategy_config,
+)
 from backtester.strategy.orchestration import (
     BaseStrategyOrchestrator,
     OrchestrationConfig,
-    OrchestratorType,
     StrategyKind,
-    StrategyReference,
 )
 from backtester.strategy.portfolio.kelly_criterion_strategy import KellyCriterionStrategy
-from backtester.strategy.portfolio.portfolio_strategy_config import (
-    AllocationMethod,
-    PortfolioStrategyConfig,
-    PortfolioStrategyType,
-)
+from backtester.strategy.portfolio.portfolio_strategy_config import PortfolioStrategyConfig
 from backtester.strategy.signal.base_signal_strategy import BaseSignalStrategy
 from backtester.strategy.signal.momentum_strategy import MomentumStrategy
 from backtester.strategy.signal.signal_strategy_config import MomentumStrategyConfig
@@ -124,23 +119,29 @@ class BacktestEngine:
 
     def __init__(
         self,
-        config: BacktesterConfig | None = None,
+        config_source: ConfigInput | None = None,
+        *,
         logger: logging.Logger | None = None,
         event_bus: EventBus | None = None,
         strategy_orchestrator: BaseStrategyOrchestrator | None = None,
+        config: BacktesterConfig | None = None,
     ) -> None:
         """Initialize the backtest engine.
 
         Args:
-            config: Backtester configuration
+            config_source: Backtester configuration object, mapping, or YAML path
+            config: BacktesterConfig instance (deprecated alias for config_source)
             logger: Logger instance
             event_bus: Optional shared event bus instance
             strategy_orchestrator: Optional strategy orchestrator instance
         """
         defaults_snapshot = get_config()
         self._global_defaults = defaults_snapshot.model_copy(deep=True)
-        source_config = config or defaults_snapshot
-        self._base_config = BacktestRunConfig(source_config).build()
+        self._config_processor = ConfigProcessor(base=self._global_defaults)
+        effective_source = config_source if config_source is not None else config
+        resolved_config = self._config_processor.apply(source=effective_source)
+        assert isinstance(resolved_config, BacktesterConfig)
+        self._base_config = resolved_config.model_copy(deep=True)
         self.config: BacktesterConfig = self._base_config.model_copy(deep=True)
         self.run_id = uuid.uuid4().hex[:8]
         if logger is not None:
@@ -162,16 +163,7 @@ class BacktestEngine:
             else:
                 bus_logger = get_backtester_logger(f"{__name__}.event_bus", run_id=self.run_id)
                 self.event_bus = EventBus(logger=bus_logger)
-            default_config = OrchestrationConfig(
-                orchestrator_type=OrchestratorType.SEQUENTIAL,
-                strategies=[
-                    StrategyReference(
-                        identifier="primary_strategy",
-                        kind=StrategyKind.SIGNAL,
-                        priority=0,
-                    )
-                ],
-            )
+            default_config = OrchestrationConfig.default_config()
             self.strategy_orchestrator = BaseStrategyOrchestrator.create(
                 config=default_config,
                 event_bus=self.event_bus,
@@ -196,11 +188,11 @@ class BacktestEngine:
         self._portfolio_identifier = "engine_portfolio"
 
         # Initialize components immediately (for test compatibility)
-        assert self.config.data is not None
-        self.data_handler = DataRetrieval(self.config.data)
-        assert self.config.performance is not None
+        data_config = self.config.data or DataRetrieval.default_config()
+        self.data_handler = DataRetrieval(data_config)
+        performance_config = self.config.performance or PerformanceAnalyzer.default_config()
         self.performance_analyzer = PerformanceAnalyzer(
-            self.config.performance.risk_free_rate, self.logger
+            logger=self.logger, config=performance_config
         )
         self._log_startup_config_diff()
 
@@ -289,19 +281,33 @@ class BacktestEngine:
             Strategy instance
         """
         strategy_params = strategy_params or {}
+        core_overrides = self._filter_component_overrides(strategy_params, StrategyConfig)
+        momentum_overrides = self._filter_component_overrides(
+            strategy_params, MomentumStrategyConfig
+        )
 
-        # Build configuration for the default momentum strategy
-        strategy_name = "momentum_strategy"
-        if self.config.strategy is not None and self.config.strategy.strategy_name:
-            strategy_name = self.config.strategy.strategy_name
+        base_strategy_config = self.config.strategy or StrategyConfig()
+        if core_overrides:
+            merged = self._config_processor.merge_models(base_strategy_config, core_overrides)
+            base_strategy_config = cast(StrategyConfig, merged)
+            self.config.strategy = base_strategy_config
 
-        if strategy_name.lower() not in {"momentum_strategy", "momentum"}:
+        data_config = self.config.data or DataRetrieval.default_config()
+        raw_symbols = data_config.tickers or ["SPY"]
+        symbols = [raw_symbols] if isinstance(raw_symbols, str) else list(raw_symbols)
+
+        strategy_identifier = base_strategy_config.strategy_name or "momentum_strategy"
+        if strategy_identifier.lower() not in {"momentum_strategy", "momentum"}:
             self.logger.warning(
                 "Strategy '%s' is not recognised. Falling back to momentum_strategy.",
-                strategy_name,
+                strategy_identifier,
             )
 
-        momentum_config = self._build_momentum_config(strategy_params, strategy_name)
+        momentum_config = build_momentum_strategy_config(
+            base_strategy_config,
+            symbols=symbols,
+            overrides=momentum_overrides,
+        )
         self.current_strategy = MomentumStrategy(momentum_config, self.event_bus)
         self.strategy = self.current_strategy
 
@@ -317,37 +323,6 @@ class BacktestEngine:
         self.logger.info(f"Created strategy: {self.current_strategy.name}")
         return self.current_strategy
 
-    def _build_momentum_config(
-        self, strategy_params: dict[str, Any], configured_name: str
-    ) -> MomentumStrategyConfig:
-        """Construct the momentum strategy configuration from defaults and overrides."""
-        assert self.config.data is not None
-        raw_symbols = self.config.data.tickers or ["SPY"]
-        symbols = [raw_symbols] if isinstance(raw_symbols, str) else list(raw_symbols)
-
-        config_values: dict[str, Any] = {
-            "name": configured_name or "momentum_strategy",
-            "strategy_name": configured_name or "momentum_strategy",
-            "symbols": symbols,
-        }
-
-        if self.config.strategy is not None:
-            for field in MomentumStrategyConfig.model_fields:
-                if hasattr(self.config.strategy, field):
-                    value = getattr(self.config.strategy, field)
-                    if value is None:
-                        continue
-                    if getattr(value, "_mock_parent", None) is not None:
-                        continue
-                    config_values[field] = value
-
-        # User supplied overrides take highest priority
-        for key, value in strategy_params.items():
-            if key in MomentumStrategyConfig.model_fields and value is not None:
-                config_values[key] = value
-
-        return MomentumStrategyConfig(**config_values)
-
     def create_portfolio(self, portfolio_params: dict[str, Any] | None = None) -> GeneralPortfolio:
         """Create portfolio instance.
 
@@ -358,25 +333,23 @@ class BacktestEngine:
             Portfolio instance
         """
         portfolio_params = portfolio_params or {}
+        core_overrides = self._filter_component_overrides(portfolio_params, PortfolioConfig)
+        strategy_overrides = self._filter_component_overrides(
+            portfolio_params, PortfolioStrategyConfig
+        )
 
-        assert self.config.portfolio is not None
-        assert self.config.strategy is not None
+        base_portfolio_config = self.config.portfolio or PortfolioConfig()
+        if core_overrides:
+            merged = self._config_processor.merge_models(base_portfolio_config, core_overrides)
+            base_portfolio_config = cast(PortfolioConfig, merged)
+            self.config.portfolio = base_portfolio_config
 
-        portfolio_view = build_portfolio_config_view(self.config)
         self.current_portfolio = GeneralPortfolio(
-            initial_capital=portfolio_view.initial_capital,
-            commission_rate=portfolio_view.commission_rate,
-            interest_rate_daily=portfolio_view.interest_rate_daily,
-            spread_rate=portfolio_view.spread_rate,
-            slippage_std=portfolio_view.slippage_std,
-            funding_enabled=portfolio_view.funding_enabled,
-            tax_rate=portfolio_view.tax_rate,
-            max_positions=portfolio_view.max_positions,
+            config=base_portfolio_config,
             logger=self.logger,
             event_bus=self.event_bus,
             portfolio_id=self._portfolio_identifier,
             risk_manager=self.current_risk_manager,
-            config_view=portfolio_view,
         )
 
         # Update portfolio parameters if provided
@@ -387,10 +360,10 @@ class BacktestEngine:
         # Update portfolio alias for test compatibility
         self.portfolio = self.current_portfolio
 
-        assert self.config.data is not None
-        raw_symbols = self.config.data.tickers or ["SPY"]
+        data_config = self.config.data or DataRetrieval.default_config()
+        raw_symbols = data_config.tickers or ["SPY"]
         symbols = [raw_symbols] if isinstance(raw_symbols, str) else list(raw_symbols)
-        self._initialize_portfolio_strategy(symbols, portfolio_params)
+        self._initialize_portfolio_strategy(symbols, strategy_overrides)
 
         self.logger.info(
             f"Created portfolio with ${self.current_portfolio.initial_capital:.2f} initial capital"
@@ -398,52 +371,27 @@ class BacktestEngine:
         return self.current_portfolio
 
     def _initialize_portfolio_strategy(
-        self, symbols: list[str], portfolio_params: dict[str, Any]
+        self,
+        symbols: list[str],
+        portfolio_strategy_overrides: dict[str, Any] | None,
     ) -> None:
         """Create or update the Kelly criterion portfolio strategy."""
         if self.current_portfolio is None:
             return
 
+        base_portfolio_config = self.config.portfolio or PortfolioConfig()
+        strategy_config = build_portfolio_strategy_config(
+            base_portfolio_config,
+            symbols=symbols,
+            overrides=portfolio_strategy_overrides,
+        )
+
         if self.portfolio_strategy is None:
-            portfolio_config = self._build_portfolio_strategy_config(symbols, portfolio_params)
-            self.portfolio_strategy = KellyCriterionStrategy(portfolio_config, self.event_bus)
+            self.portfolio_strategy = KellyCriterionStrategy(strategy_config, self.event_bus)
 
         self.portfolio_strategy.initialize_portfolio(self.current_portfolio)
         if self.current_risk_manager is not None:
             self.portfolio_strategy.set_risk_manager(self.current_risk_manager)
-
-    def _build_portfolio_strategy_config(
-        self, symbols: list[str], portfolio_params: dict[str, Any]
-    ) -> PortfolioStrategyConfig:
-        """Assemble configuration for the Kelly portfolio strategy."""
-        strategy_name = "kelly_criterion"
-        if self.config.portfolio is not None and getattr(
-            self.config.portfolio, "portfolio_strategy_name", None
-        ):
-            strategy_name = self.config.portfolio.portfolio_strategy_name
-
-        config_values: dict[str, Any] = {
-            "strategy_name": strategy_name,
-            "strategy_type": PortfolioStrategyType.KELLY_CRITERION,
-            "symbols": symbols,
-            "allocation_method": AllocationMethod.KELLY_CRITERION,
-        }
-
-        if self.config.portfolio is not None:
-            for field in ("min_position_size", "max_position_size"):
-                if hasattr(self.config.portfolio, field):
-                    value = getattr(self.config.portfolio, field)
-                    if value is None:
-                        continue
-                    if getattr(value, "_mock_parent", None) is not None:
-                        continue
-                    config_values[field] = value
-
-        for key, value in portfolio_params.items():
-            if key in PortfolioStrategyConfig.model_fields and value is not None:
-                config_values[key] = value
-
-        return PortfolioStrategyConfig(**config_values)
 
     def create_broker(self) -> SimulatedBroker:
         """Create broker instance.
@@ -451,9 +399,9 @@ class BacktestEngine:
         Returns:
             Broker instance
         """
-        execution_view = build_execution_config_view(self.config)
+        execution_config = self.config.execution or SimulatedBroker.default_config()
         self.current_broker = SimulatedBroker(
-            config_view=execution_view,
+            config=execution_config,
             logger=self.logger,
             event_bus=self.event_bus,
             risk_manager=self.current_risk_manager,
@@ -477,9 +425,9 @@ class BacktestEngine:
         Returns:
             Risk manager instance
         """
-        risk_view = build_risk_config_view(self.config)
+        risk_config = self.config.risk or RiskControlManager.default_config()
         self.current_risk_manager = RiskControlManager(
-            config_view=risk_view,
+            config=risk_config,
             logger=self.logger,
             event_bus=self.event_bus,
         )
@@ -1066,19 +1014,23 @@ class BacktestEngine:
         strategy_overrides: dict[str, Any] | None = None,
         portfolio_overrides: dict[str, Any] | None = None,
     ) -> BacktesterConfig:
-        builder = BacktestRunConfig(self._base_config)
+        component_overrides: dict[str, dict[str, Any]] = {}
         if data_overrides:
-            builder.with_data_overrides(**data_overrides)
+            component_overrides['data'] = data_overrides
         filtered_strategy = self._filter_component_overrides(strategy_overrides, StrategyConfig)
         if filtered_strategy:
-            builder.with_strategy_overrides(**filtered_strategy)
+            component_overrides['strategy'] = filtered_strategy
         filtered_portfolio = self._filter_component_overrides(portfolio_overrides, PortfolioConfig)
         if filtered_portfolio:
-            builder.with_portfolio_overrides(**filtered_portfolio)
-        run_config = builder.build()
-        self.config = run_config
-        self._log_run_config_diff(run_config)
-        return run_config
+            component_overrides['portfolio'] = filtered_portfolio
+        resolved = self._config_processor.apply(
+            source=self._base_config,
+            component_overrides=component_overrides or None,
+        )
+        assert isinstance(resolved, BacktesterConfig)
+        self.config = resolved.model_copy(deep=True)
+        self._log_run_config_diff(resolved)
+        return self.config
 
     def _filter_component_overrides(
         self,

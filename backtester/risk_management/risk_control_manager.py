@@ -75,6 +75,11 @@ class RiskControlManager:
         if self.event_bus is not None:
             self._subscribe_to_portfolio_updates()
 
+    @classmethod
+    def default_config(cls) -> ComprehensiveRiskConfig:
+        """Return the default risk configuration."""
+        return ComprehensiveRiskConfig()
+
     def attach_event_bus(self, event_bus: EventBus) -> None:
         """Attach an event bus after initialization."""
         self.event_bus = event_bus

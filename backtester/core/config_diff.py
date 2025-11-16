@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
+
+from pydantic import BaseModel
 
 from backtester.core.config import BacktesterConfig
 
@@ -18,10 +20,13 @@ class ConfigDelta:
     after: Any
 
 
-def diff_configs(base: BacktesterConfig, updated: BacktesterConfig) -> list[ConfigDelta]:
-    """Return a flat list of differences between two BacktesterConfig snapshots."""
-    baseline = base.model_dump(mode="python")
-    candidate = updated.model_dump(mode="python")
+ConfigPayload = BacktesterConfig | BaseModel | Mapping[str, Any]
+
+
+def diff_configs(base: ConfigPayload, updated: ConfigPayload) -> list[ConfigDelta]:
+    """Return a flat list of differences between two configuration snapshots."""
+    baseline = _as_mapping(base)
+    candidate = _as_mapping(updated)
     deltas: list[ConfigDelta] = []
     _collect_diffs(path="", left=baseline, right=candidate, deltas=deltas)
     return deltas
@@ -59,3 +64,13 @@ def _collect_diffs(
 
     if left != right:
         deltas.append(ConfigDelta(path or "[root]", left, right))
+
+
+def _as_mapping(config: ConfigPayload) -> Mapping[str, Any]:
+    if isinstance(config, BacktesterConfig):
+        return config.model_dump(mode="python")
+    if isinstance(config, BaseModel):
+        return config.model_dump(mode="python")
+    if isinstance(config, Mapping):
+        return config
+    raise TypeError(f"Unsupported config payload type: {type(config)!r}")

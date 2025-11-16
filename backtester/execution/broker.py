@@ -11,7 +11,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from backtester.core.config import ExecutionConfigView, SimulatedBrokerConfig
+from backtester.core.config import ExecutionConfig, ExecutionConfigView, SimulatedBrokerConfig
 from backtester.core.event_bus import EventBus, EventPriority
 from backtester.core.events import OrderEvent as BusOrderEvent
 from backtester.core.events import OrderSide as EventOrderSide
@@ -26,7 +26,7 @@ class SimulatedBroker:
 
     def __init__(
         self,
-        config: SimulatedBrokerConfig | None = None,
+        config: ExecutionConfig | SimulatedBrokerConfig | None = None,
         config_view: ExecutionConfigView | None = None,
         commission_rate: float | None = None,
         min_commission: float | None = None,
@@ -42,14 +42,14 @@ class SimulatedBroker:
         """Initialize the simulated broker.
 
         Args:
-            config: SimulatedBrokerConfig instance. If provided, other parameters are ignored.
-            config_view: Immutable execution configuration snapshot that takes precedence over config.
-            commission_rate: Commission rate for trades (as decimal) - deprecated, use config
-            min_commission: Minimum commission per trade - deprecated, use config
-            spread: Bid-ask spread (as decimal) - deprecated, use config
-            slippage_model: Type of slippage model - deprecated, use config
-            slippage_std: Standard deviation for slippage simulation - deprecated, use config
-            latency_ms: Simulated latency in milliseconds - deprecated, use config
+            config: Execution configuration model applied to the broker.
+            config_view: Immutable execution configuration snapshot (deprecated).
+            commission_rate: Commission rate override for backward compatibility.
+            min_commission: Minimum commission override for backward compatibility.
+            spread: Bid-ask spread override for backward compatibility.
+            slippage_model: Slippage model override for backward compatibility.
+            slippage_std: Slippage std override for backward compatibility.
+            latency_ms: Latency override for backward compatibility.
             logger: Optional logger instance
             event_bus: Optional event bus for publishing order execution events
             risk_manager: Optional risk manager used for additional risk checks
@@ -59,32 +59,30 @@ class SimulatedBroker:
         self.event_bus = event_bus
         self.risk_manager = risk_manager
 
+        resolved_config = self._resolve_config(config=config, config_view=config_view)
+        params = resolved_config.model_dump()
+        if commission_rate is not None:
+            params['commission_rate'] = commission_rate
+        if min_commission is not None:
+            params['min_commission'] = min_commission
+        if spread is not None:
+            params['spread'] = spread
+        if slippage_model is not None:
+            params['slippage_model'] = slippage_model
+        if slippage_std is not None:
+            params['slippage_std'] = slippage_std
+        if latency_ms is not None:
+            params['latency_ms'] = latency_ms
+
+        self._config = ExecutionConfig(**params)
         self._config_view = config_view
 
-        # Use config view first, fallback to config or explicit parameters
-        if config_view is not None:
-            self.commission_rate = config_view.commission_rate
-            self.min_commission = config_view.min_commission
-            self.spread = config_view.spread
-            self.slippage_model = config_view.slippage_model
-            self.slippage_std = config_view.slippage_std
-            self.latency_ms = config_view.latency_ms
-        elif config is not None:
-            # Use config values - define attributes once
-            self.commission_rate = config.commission_rate
-            self.min_commission = config.min_commission
-            self.spread = config.spread
-            self.slippage_model = config.slippage_model
-            self.slippage_std = config.slippage_std
-            self.latency_ms = config.latency_ms
-        else:
-            # Backward compatibility - use individual parameters with defaults
-            self.commission_rate = commission_rate or 0.001
-            self.min_commission = min_commission or 1.0
-            self.spread = spread or 0.0001
-            self.slippage_model = slippage_model or "normal"
-            self.slippage_std = slippage_std or 0.0005
-            self.latency_ms = latency_ms or 0.0
+        self.commission_rate = self._config.commission_rate
+        self.min_commission = self._config.min_commission
+        self.spread = self._config.spread
+        self.slippage_model = self._config.slippage_model
+        self.slippage_std = self._config.slippage_std
+        self.latency_ms = self._config.latency_ms
 
         # State
         self.order_manager = OrderManager(logger)
@@ -96,6 +94,33 @@ class SimulatedBroker:
         self.portfolio_value: float = self.cash_balance
 
         self.logger.info("Simulated broker initialized")
+
+    @classmethod
+    def default_config(cls) -> ExecutionConfig:
+        """Return the default execution configuration for the broker."""
+        return ExecutionConfig()
+
+    @staticmethod
+    def _resolve_config(
+        *,
+        config: ExecutionConfig | SimulatedBrokerConfig | None,
+        config_view: ExecutionConfigView | None,
+    ) -> ExecutionConfig:
+        """Resolve the configuration precedence for the broker."""
+        if config_view is not None:
+            return ExecutionConfig(
+                commission_rate=config_view.commission_rate,
+                min_commission=config_view.min_commission,
+                spread=config_view.spread,
+                slippage_model=config_view.slippage_model,
+                slippage_std=config_view.slippage_std,
+                latency_ms=config_view.latency_ms,
+            )
+        if isinstance(config, ExecutionConfig):
+            return config.model_copy(deep=True)
+        if isinstance(config, SimulatedBrokerConfig):
+            return ExecutionConfig(**config.model_dump(mode="python"))
+        return SimulatedBroker.default_config()
 
     # ------------------------------------------------------------------#
     # Lifecycle hooks

@@ -11,20 +11,38 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from backtester.core.config import PerformanceConfig
+
 
 class PerformanceAnalyzer:
     """Comprehensive performance analysis for trading strategies."""
 
-    def __init__(self, risk_free_rate: float = 0.02, logger: logging.Logger | None = None) -> None:
+    def __init__(
+        self,
+        risk_free_rate: float | None = None,
+        logger: logging.Logger | None = None,
+        *,
+        config: PerformanceConfig | None = None,
+    ) -> None:
         """Initialize the performance analyzer.
 
         Args:
-            risk_free_rate: Annual risk-free rate for calculations
+            risk_free_rate: Optional annual risk-free rate override for calculations
             logger: Optional logger instance
+            config: Performance configuration applied to the analyzer
         """
+        resolved_config = config.model_copy(deep=True) if config else self.default_config()
         self.logger: logging.Logger = logger or logging.getLogger(__name__)
-        self.risk_free_rate: float = risk_free_rate
+        self.config = resolved_config
+        self.risk_free_rate: float = (
+            risk_free_rate if risk_free_rate is not None else resolved_config.risk_free_rate
+        )
         self.operational_metrics = OperationalMetrics()
+
+    @classmethod
+    def default_config(cls) -> PerformanceConfig:
+        """Return the default performance configuration."""
+        return PerformanceConfig()
 
     def calculate_returns(self, prices: pd.Series) -> pd.Series:
         """Calculate returns from price series.

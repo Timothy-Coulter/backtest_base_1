@@ -9,7 +9,7 @@ from typing import Any
 
 import pandas as pd
 
-from backtester.core.config import PortfolioConfigView
+from backtester.core.config import PortfolioConfig
 from backtester.core.event_bus import EventBus
 from backtester.core.interfaces import RiskManagerProtocol
 from backtester.portfolio.base_portfolio import BasePortfolio
@@ -37,7 +37,7 @@ class GeneralPortfolio(BasePortfolio):
         event_bus: EventBus | None = None,
         portfolio_id: str | None = None,
         risk_manager: RiskManagerProtocol | None = None,
-        config_view: PortfolioConfigView | None = None,
+        config: PortfolioConfig | None = None,
     ) -> None:
         """Initialize the general portfolio.
 
@@ -54,19 +54,72 @@ class GeneralPortfolio(BasePortfolio):
             event_bus: Optional event bus used to broadcast updates
             portfolio_id: Identifier for emitted portfolio events
             risk_manager: Optional risk manager that centralizes risk checks
-            config_view: Frozen configuration view applied to the portfolio
+            config: PortfolioConfig applied to the portfolio
         """
-        if config_view is not None:
-            initial_capital = config_view.initial_capital
-            commission_rate = config_view.commission_rate
-            interest_rate_daily = config_view.interest_rate_daily
-            spread_rate = config_view.spread_rate
-            slippage_std = config_view.slippage_std
-            funding_enabled = config_view.funding_enabled
-            tax_rate = config_view.tax_rate
-            max_positions = config_view.max_positions
+        resolved_config = (
+            config.model_copy(deep=True)
+            if config
+            else self._config_from_params(
+                initial_capital=initial_capital,
+                commission_rate=commission_rate,
+                interest_rate_daily=interest_rate_daily,
+                spread_rate=spread_rate,
+                slippage_std=slippage_std,
+                funding_enabled=funding_enabled,
+                tax_rate=tax_rate,
+                max_positions=max_positions,
+            )
+        )
 
         super().__init__(
+            initial_capital=resolved_config.initial_capital,
+            commission_rate=resolved_config.commission_rate,
+            interest_rate_daily=resolved_config.interest_rate_daily,
+            spread_rate=resolved_config.spread_rate,
+            slippage_std=resolved_config.slippage_std,
+            funding_enabled=resolved_config.funding_enabled,
+            tax_rate=resolved_config.tax_rate,
+            logger=logger,
+            event_bus=event_bus,
+            portfolio_id=portfolio_id,
+        )
+
+        # Portfolio-specific parameters
+        self.max_positions: int = resolved_config.max_positions
+        self.cash: float = resolved_config.initial_capital
+
+        # Portfolio tracking (additional to base class)
+        self.total_commission: float = 0.0
+        self.total_slippage: float = 0.0
+        self.positions: dict[str, Position] = {}
+        self.risk_manager = risk_manager
+        self._config = resolved_config
+
+        self.logger.info(
+            "Initialized GeneralPortfolio with $%.2f capital, max %s positions",
+            resolved_config.initial_capital,
+            resolved_config.max_positions,
+        )
+
+    @classmethod
+    def default_config(cls) -> PortfolioConfig:
+        """Return the default PortfolioConfig instance."""
+        return PortfolioConfig()
+
+    @staticmethod
+    def _config_from_params(
+        *,
+        initial_capital: float,
+        commission_rate: float,
+        interest_rate_daily: float,
+        spread_rate: float,
+        slippage_std: float,
+        funding_enabled: bool,
+        tax_rate: float,
+        max_positions: int,
+    ) -> PortfolioConfig:
+        """Create a PortfolioConfig from primitive parameters."""
+        return PortfolioConfig(
             initial_capital=initial_capital,
             commission_rate=commission_rate,
             interest_rate_daily=interest_rate_daily,
@@ -74,24 +127,7 @@ class GeneralPortfolio(BasePortfolio):
             slippage_std=slippage_std,
             funding_enabled=funding_enabled,
             tax_rate=tax_rate,
-            logger=logger,
-            event_bus=event_bus,
-            portfolio_id=portfolio_id,
-        )
-
-        # Portfolio-specific parameters
-        self.max_positions: int = max_positions
-        self.cash: float = initial_capital
-
-        # Portfolio tracking (additional to base class)
-        self.total_commission: float = 0.0
-        self.total_slippage: float = 0.0
-        self.positions: dict[str, Position] = {}
-        self.risk_manager = risk_manager
-        self._config_view = config_view
-
-        self.logger.info(
-            f"Initialized GeneralPortfolio with ${initial_capital:.2f} capital, max {max_positions} positions"
+            max_positions=max_positions,
         )
 
     @property

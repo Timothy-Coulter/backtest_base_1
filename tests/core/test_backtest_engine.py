@@ -5,7 +5,6 @@ all components of the trading system including data loading, strategy execution,
 portfolio management, and performance calculation.
 """
 
-from dataclasses import FrozenInstanceError
 from typing import Any
 from unittest.mock import Mock, patch
 
@@ -199,16 +198,16 @@ class TestBacktestEngine:
         assert 'win_rate' in result
         assert isinstance(result['total_return'], float)
 
-    def test_portfolio_config_view_is_read_only(self, mock_config: BacktesterConfig) -> None:
-        """Attempting to mutate the portfolio config view should raise."""
+    def test_portfolio_config_instance_is_copied(self, mock_config: BacktesterConfig) -> None:
+        """Portfolio instances should hold their own config copy."""
         engine = BacktestEngine(config=mock_config)
         engine.create_portfolio()
         assert engine.current_portfolio is not None
-        view = getattr(engine.current_portfolio, "_config_view", None)
-        assert view is not None
-        mutable_view: Any = view
-        with pytest.raises(FrozenInstanceError):
-            mutable_view.max_positions = 1
+        portfolio_config = getattr(engine.current_portfolio, "_config", None)
+        assert portfolio_config is not None
+        baseline_capital = engine.current_portfolio.initial_capital
+        engine.config.portfolio.initial_capital = baseline_capital + 500.0
+        assert engine.current_portfolio.initial_capital == baseline_capital
 
     def test_handle_exception_gracefully(
         self, test_data: pd.DataFrame, mock_config: BacktesterConfig

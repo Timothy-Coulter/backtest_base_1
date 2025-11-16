@@ -25,6 +25,12 @@ from backtester.core.config import (
 
 # Event system imports
 from backtester.core.config_diff import ConfigDelta, diff_configs, format_config_diff
+from backtester.core.config_processor import (
+    ConfigProcessor,
+    ConfigProcessorError,
+    ConfigSourceError,
+    ConfigValidationError,
+)
 from backtester.core.event_bus import Event, EventBus, EventFilter, EventPriority
 from backtester.core.event_handlers import (
     CompositeEventHandler,
@@ -76,6 +82,10 @@ __all__ = [
     'BacktesterConfig',
     'BacktestRunConfig',
     'ComprehensiveRiskConfig',
+    'ConfigProcessor',
+    'ConfigProcessorError',
+    'ConfigSourceError',
+    'ConfigValidationError',
     'DataRetrievalConfig',
     'DataConfigView',
     'StrategyConfig',
